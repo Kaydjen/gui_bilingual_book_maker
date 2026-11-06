@@ -9,11 +9,12 @@ import sys
 import threading
 import time
 import tkinter as tk
-import webbrowser
 from pathlib import Path
 from tkinter import filedialog, ttk
 
-from . import clipboard, cmdbuild, engine, icon, installer, jobs, promptset, prompts, runner, theme
+from . import clipboard, cmdbuild, engine, icon, installer, jobs, keypool, promptset, prompts, runner, theme
+from .keys_win import KeysWindow
+from .models_win import ModelsWindow
 from .options_win import OptionsWindow
 from .prompt_win import PromptWindow
 from .settings import Settings, data_dir
@@ -26,7 +27,6 @@ PRESETS = {
     "Gemini free": {"--api_format": "gemini", "--interval": "4", "--temperature": "0.4", "--use_context": True},
     "Custom": {},
 }
-KEY_URL = "https://aistudio.google.com/apikey"
 LOG_LINES = 6000
 LINE_CUT = 500
 BOOK_TYPES = [("Books", "*.epub *.txt *.srt *.md *.pdf"), ("All files", "*.*")]
@@ -79,6 +79,13 @@ class App:
         self.busy_engine = False
         self.options = None
         self.prompt_win = None
+        self.keys_win = None
+        self.models_win = None
+        self.bad_keys = set()  # keys the API refused in this session
+        self.active_key = None
+        self.cur_pair = None  # (key, model) of the run in progress
+        self.run_note = ""  # chip text while a run uses one of several keys
+        self._switching = False
 
         s = self.settings
         self.source = tk.StringVar(value="")
@@ -86,7 +93,7 @@ class App:
         self.to_var = tk.StringVar(value=s.get("to", "Russian"))
         self.mode = tk.StringVar(value=s.get("mode", "bilingual"))
         self.preset = tk.StringVar(value=s.get("preset", "Gemini free"))
-        self.model = tk.StringVar(value=s.get("model", MODELS[0]))
+        self.model = tk.StringVar(value=s.get("model", ", ".join(MODELS)))
         self.key = tk.StringVar(value=s.get("key", ""))
         self.prompt_path = tk.StringVar(value=s.get("prompt", ""))
         self.folder = tk.StringVar(value=s.get("folder", ""))
@@ -96,7 +103,7 @@ class App:
             v.trace_add("write", lambda *_: self.on_change())
         self.preset.trace_add("write", lambda *_: self._apply_preset(self.preset.get()))
         self.source.trace_add("write", lambda *_: self.on_change())
-        self.normalize_key()
+        self.pool().purge(time.time())
 
         root.protocol("WM_DELETE_WINDOW", self.on_close)
         root.bind("<Control-o>", lambda e: self.choose_file())
@@ -158,19 +165,11 @@ class App:
         row.columnconfigure(1, weight=1)
         row.columnconfigure(3, weight=1)
         ttk.Label(row, text="Model", style="Dim.TLabel").grid(row=0, column=0, padx=(0, 8))
-        ttk.Combobox(row, textvariable=self.model, values=MODELS).grid(row=0, column=1, sticky="ew")
-        ttk.Label(row, text="Key", style="Dim.TLabel").grid(row=0, column=2, padx=(18, 8))
-        self.key_entry = ttk.Entry(row, textvariable=self.key, show="•")
-        self.key_entry.grid(row=0, column=3, sticky="ew")
-        self.key_entry.bind("<<Paste>>", lambda e: self.root.after_idle(self.normalize_key))
-        self.key_entry.bind("<FocusOut>", lambda e: self.normalize_key())
-        tail = ttk.Frame(row)
-        tail.grid(row=0, column=4, padx=(10, 0))
-        self.key_count = ttk.Label(tail, text="", style="Dim.TLabel")
-        self.key_count.pack(side="left", padx=(0, 10))
-        link = ttk.Label(tail, text="Get key", style="Link.TLabel", cursor="hand2")
-        link.pack(side="left")
-        link.bind("<Button-1>", lambda e: webbrowser.open(KEY_URL))
+        self.model_btn = ttk.Button(row, text="", style="Slot.TButton", command=self.open_models)
+        self.model_btn.grid(row=0, column=1, sticky="ew")
+        ttk.Label(row, text="Keys", style="Dim.TLabel").grid(row=0, column=2, padx=(18, 8))
+        self.keys_btn = ttk.Button(row, text="Add key", style="SlotNeed.TButton", command=self.open_keys)
+        self.keys_btn.grid(row=0, column=3, sticky="ew")
 
         # prompt
         row = ttk.Frame(main)
@@ -384,7 +383,7 @@ class App:
             return None
         return jobs.Job(src, self._mode_job(), self.to_var.get().strip() or "x")
 
-    def _state_flags(self, book_path):
+    def _state_flags(self, book_path, model=None):
         st = dict(self.flagstate)
         st["--book_name"] = book_path
         to = self.to_var.get().strip()
@@ -397,12 +396,15 @@ class App:
             st["--single_translate"] = True
         if self.prompt_path.get():
             st["--prompt"] = self.prompt_path.get()
-        if self.model.get().strip():
-            st["--model"] = self.model.get().strip()
+        if model is None:
+            models = self.model_list()
+            model = models[0] if models else ""
+        if model:
+            st["--model"] = model
         return st
 
-    def build_args(self, mask, book_path, resume):
-        st = self._state_flags(book_path)
+    def build_args(self, mask, book_path, resume, model=None):
+        st = self._state_flags(book_path, model)
         argv, _ = cmdbuild.build_argv(self.inventory, st, self.overlay, mask=mask)
         argv += cmdbuild.split_extra(self.settings.get("extra_args", ""))
         if resume and "--resume" not in argv:
@@ -410,15 +412,40 @@ class App:
         return argv
 
     def key_list(self):
-        """Keys typed in the field: separated by commas, spaces, semicolons or new lines."""
-        return [k for k in re.split(r"[\s,;]+", self.key.get().strip()) if k]
+        return keypool.parse(self.key.get())
 
-    def normalize_key(self):
-        keys = self.key_list()
-        joined = ",".join(keys)
-        if joined != self.key.get():
-            self.key.set(joined)
-        self.key_count.configure(text="%d keys" % len(keys) if len(keys) > 1 else "")
+    def model_list(self):
+        return keypool.parse(self.model.get())
+
+    def pool(self):
+        p = keypool.Pool(self.key_list(), self.model_list(), self.settings.get("spent"))
+        p.bad = self.bad_keys & set(p.keys)
+        p.purge(time.time())
+        return p
+
+    def _store_pool(self, pool):
+        self.settings["spent"] = pool.spent
+        try:
+            self.settings.save()
+        except OSError:
+            pass
+
+    def reset_marks(self):
+        self.bad_keys = set()
+        self.settings["spent"] = {}
+        self.on_change()
+
+    def open_models(self):
+        if self.models_win is not None and self.models_win.winfo_exists():
+            self.models_win.lift()
+            return
+        self.models_win = ModelsWindow(self, MODELS)
+
+    def open_keys(self):
+        if self.keys_win is not None and self.keys_win.winfo_exists():
+            self.keys_win.lift()
+            return
+        self.keys_win = KeysWindow(self)
 
     def _shell(self):
         return "cmd" if os.name == "nt" else "posix"
@@ -429,7 +456,8 @@ class App:
         job = self.job
         book = str(job.copy) if job else "…"
         resume = bool(job and job.has_cache())
-        argv = self.build_args(True, book, resume)
+        pair = self.pool().next_pair(time.time())
+        argv = self.build_args(True, book, resume, pair[1] if pair else None)
         prefix = [self.python, str(Path(self.engine_root) / "make_book.py")]
         line = cmdbuild.render(prefix + argv, self._shell())
         env = ""
@@ -487,6 +515,23 @@ class App:
             (w.grid if show_from else w.grid_remove)()
         pp = self.prompt_path.get()
         self.prompt_btn.configure(text=Path(pp).name if pp else "none")
+        models = self.model_list()
+        self.model_btn.configure(text=("%d models" % len(models)) if len(models) > 1 else (models[0] if models else "none"))
+        keys = self.key_list()
+        pool = self.pool()
+        usable = pool.usable_keys(time.time())
+        if not keys:
+            ktext, kneed = "Add key", self._key_needed()
+        elif self.runner.running and self.active_key in keys and len(keys) > 1:
+            ktext, kneed = "Key %d of %d" % (keys.index(self.active_key) + 1, len(keys)), False
+        elif len(keys) == 1:
+            ktext, kneed = "1 key", not usable
+        else:
+            ktext = "%d keys" % len(keys) if len(usable) == len(keys) else "%d of %d keys" % (len(usable), len(keys))
+            kneed = not usable
+        self.keys_btn.configure(text=ktext, style="SlotNeed.TButton" if kneed else "Slot.TButton")
+        if self.keys_win is not None and self.keys_win.winfo_exists():
+            self.keys_win.refresh()
         problems = self._problems()
         names = {"user": "?", "text": "{text}", "braces": "{ }", "language": "{language}"}
         self.prompt_problem.configure(text="  ".join(names[p] for p in problems))
@@ -575,6 +620,25 @@ class App:
         job = self._job()
         if not job or not self.inventory:
             return
+        pool = self.pool()
+        keys = pool.keys
+        if keys:
+            pair = pool.next_pair(time.time())
+            if pair is None:
+                back = pool.earliest_return(time.time())
+                if back is None:
+                    self._set_chip("Key", "accent")
+                else:
+                    self._set_chip("Quota " + runner.local_hhmm(back), "accent")
+                self._refresh()
+                return
+        else:
+            models = self.model_list()
+            pair = ("", models[0] if models else "")
+        key, model = pair
+        self.cur_pair = pair
+        self.active_key = key or None
+        self.run_note = "Key %d/%d" % (keys.index(key) + 1, len(keys)) if len(keys) > 1 else ""
         try:
             job.prepare()
         except OSError as e:
@@ -597,28 +661,26 @@ class App:
                 return
             if res.get("removed"):
                 self.log_append("Checkpoint: %d failed paragraph(s) will be translated again" % res["removed"], "dim")
-        args = self.build_args(False, str(job.copy), resume)
-        keys = self.key_list()
-        key = ",".join(keys)
-        env = {}
-        for name in ("BBM_API_KEY",):
-            env[name] = key
+        args = self.build_args(False, str(job.copy), resume, model)
+        env = {"BBM_API_KEY": key}  # one key per run: the GUI, not the engine, decides when to change it
         # stray key variables must not leak into the job
         for name in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY",
                      "XAI_API_KEY", "DASHSCOPE_API_KEY", "LITELLM_MASTER_KEY"):
             env.setdefault(name, "")
-        if not key:
-            env["BBM_API_KEY"] = ""
         self.monitor = runner.Monitor()
         self.result_path = None
-        self.log_clear()
-        self.log_append("")  # keep the view non-empty
+        if not self._switching:
+            self.log_clear()
+            self.log_append("")  # keep the view non-empty
+        if self._switching and len(keys) > 1:
+            self.log_append("%s  %s" % (self.run_note, model), "strong")
+        self._switching = False
         self.state = "running"
         self.started = time.time()
-        self._set_chip("", "dim")
+        self._set_chip(self.run_note, "dim")
         self.count_var.set("")
         try:
-            self.runner.start(self.python, self.engine_root, args, env, job.dir, job.log_path, keys + [key])
+            self.runner.start(self.python, self.engine_root, args, env, job.dir, job.log_path, keys)
         except OSError as e:
             self.state = "error"
             self._set_chip("Engine", "accent")
@@ -649,10 +711,10 @@ class App:
             self.runner.stop(guard)
             self._set_chip("Stopping", "dim")
             self._refresh()
-        if self.monitor.retrying and self.chip == "":
+        if self.monitor.retrying and self.chip == self.run_note:
             self._set_chip("Retrying", "dim")
         elif not self.monitor.retrying and self.chip == "Retrying":
-            self._set_chip("", "dim")
+            self._set_chip(self.run_note, "dim")
         if kind == "frame":
             return
         if stream == "err" and runner.TQDM.search(text):
@@ -680,6 +742,20 @@ class App:
         state, chip = runner.classify(rc, self.runner.stop_requested, self.runner.killed, self.runner.guard,
                                       self.monitor, out_ok)
         self.state = state
+        guard = self.runner.guard
+        self.active_key = None
+        if guard in ("quota", "key", "model") and self.cur_pair and not self.runner.killed and not self.closing:
+            nxt, back = self._next_after_guard(guard)
+            if nxt:
+                self.state = "stopped"
+                self._set_chip("Next key" if nxt[0] != self.cur_pair[0] else "Next model", "dim")
+                self.root.title("Bilingual Book Maker")
+                self._switching = True
+                self._refresh()
+                self.root.after(600, self._continue_switch)
+                return
+            if guard == "quota" and back:
+                chip = "Quota " + runner.local_hhmm(back)
         if state == "finished" and job:
             try:
                 name = jobs.target_name(self.settings.get("name_pattern"), job.source, job.language, job.mode)
@@ -700,6 +776,28 @@ class App:
         self._refresh()
         if self.closing:
             self._finish_close()
+
+    def _next_after_guard(self, guard):
+        """Mark the pair the run used as spent (or its key as invalid) and return (next pair or None, earliest return)."""
+        key, model = self.cur_pair
+        pool = self.pool()
+        now = time.time()
+        if guard == "key":
+            self.bad_keys.add(key)
+            pool.mark_bad(key)
+        else:
+            daily = self.monitor.daily or guard == "model"  # a missing model is not worth retrying today
+            until = runner.quota_reset_utc().timestamp() if daily else now + keypool.SHORT_WAIT
+            pool.mark(key, model, until)
+        self._store_pool(pool)
+        return pool.next_pair(now), pool.earliest_return(now)
+
+    def _continue_switch(self):
+        try:
+            if not self.closing and not self.runner.running:
+                self.start_run()
+        finally:
+            self._switching = False
 
     # ------------------------------------------------------------------ log
     def log_clear(self):

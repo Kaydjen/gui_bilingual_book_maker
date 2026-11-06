@@ -25,6 +25,8 @@ FAILED = re.compile(r"Translation failed for this paragraph")
 FATAL = re.compile(r"Translation disabled due to fatal error|Fatal translation error detected")
 AUTH = re.compile(r"API key not valid|API_KEY_INVALID|UNAUTHENTICATED|PERMISSION_DENIED|\b401\b|\b403\b")
 QUOTA = re.compile(r"\b429\b|RESOURCE_EXHAUSTED|quota", re.I)
+GONE = re.compile(r"NOT_FOUND|no longer available|\b404\b")
+DAILY =re.compile(r"PerDay", re.I)
 SAVED = re.compile(r"^(?:Bilingual book saved: (?P<a>.+)|Bilingual EPUB saved beside the source file: (?P<b>.+))$")
 ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
@@ -97,6 +99,7 @@ class Monitor:
         self.retry_attempt = 0
         self.retrying = False
         self.quota = False
+        self.daily = False  # the 429 text names a per-day quota
         self.key_error = False
         self.failed = 0
         self.fatal = False
@@ -105,6 +108,8 @@ class Monitor:
     def feed(self, stream, kind, text):
         """Return a guard reason ('quota', 'failed', 'key') when the run must stop, else None."""
         text = ANSI.sub("", text)
+        if self.retrying and DAILY.search(text):  # the engine's console wraps the error text over several lines
+            self.daily = True
         m = TQDM.search(text)
         if m and stream == "err":
             n, total = _num(m.group("n")), _num(m.group("total"))
@@ -127,10 +132,14 @@ class Monitor:
         m = RETRY.search(text)
         if m:
             self.retrying = True
+            if DAILY.search(text):
+                self.daily = True
             self.retry_attempt = max(self.retry_attempt, int(m.group("n")))
             if AUTH.search(text):
                 self.key_error = True
                 return "key"
+            if GONE.search(text):
+                return "model"
             if QUOTA.search(text):
                 self.quota = True
                 if self.retry_attempt >= GUARD_ATTEMPT:
@@ -157,15 +166,22 @@ def _us_pacific_offset(utc):
     return -7 if start <= naive < end else -8
 
 
-def quota_reset_local(now=None):
-    """The next midnight in US Pacific time (when the free daily quota resets), as local HH:MM."""
+def quota_reset_utc(now=None):
+    """The next midnight in US Pacific time (when the free daily quota resets), as an aware UTC datetime."""
     now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(dt.timezone.utc)
     off = _us_pacific_offset(now)
     pacific = now + dt.timedelta(hours=off)
     midnight = (pacific + dt.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     off_then = _us_pacific_offset(midnight - dt.timedelta(hours=off))
-    reset_utc = midnight - dt.timedelta(hours=off_then)
-    return reset_utc.replace(tzinfo=dt.timezone.utc).astimezone().strftime("%H:%M")
+    return (midnight - dt.timedelta(hours=off_then)).replace(tzinfo=dt.timezone.utc)
+
+
+def local_hhmm(epoch):
+    return dt.datetime.fromtimestamp(epoch).strftime("%H:%M")
+
+
+def quota_reset_local(now=None):
+    return quota_reset_utc(now).astimezone().strftime("%H:%M")
 
 
 def classify(rc, stop_requested, killed, guard, monitor, out_ok):
@@ -179,6 +195,8 @@ def classify(rc, stop_requested, killed, guard, monitor, out_ok):
             return "stopped", "Failed %d" % max(monitor.failed, 1)
         if guard == "key":
             return "error", "Key"
+        if guard == "model":
+            return "error", "Model"
         return "stopped", ""
     if monitor.key_error and rc != 0:
         return "error", "Key"
