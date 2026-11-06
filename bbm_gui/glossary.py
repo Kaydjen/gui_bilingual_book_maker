@@ -329,22 +329,36 @@ def glossary_lines(entries, with_notes: bool = True) -> str:
     return "\n".join(lines)
 
 
-def build_system(template_system: str, entries, with_notes: bool = True) -> str:
-    """Template text (ending with the glossary heading) + a newline + the glossary lines.
+def _has_note(entries) -> bool:
+    return any(e.term and e.translation and e.note for e in entries)
 
-    Same layout as the user's convert_glossary.py: the heading is the last line of the template and the
-    lines follow immediately. With no entries the template is returned unchanged.
+
+def build_system(template_system: str, entries, with_notes: bool = True, head=None, hint: str = "") -> str:
+    """Template text + the glossary block, the block only when there is at least one usable entry.
+
+    head is None  -> legacy template that ends with its own glossary heading: the lines follow it at once
+                     (same layout as the user's convert_glossary.py); with no entries it is returned unchanged.
+    head is a str -> the template has no glossary wording: a blank line, the head, the notes hint (only when
+                     some usable entry has a note and notes are on), then the lines.
     """
     lines = glossary_lines(entries, with_notes)
     if not lines:
         return template_system
-    return template_system.rstrip("\n") + "\n" + lines
+    if head is None:
+        return template_system.rstrip("\n") + "\n" + lines
+    parts = [head.strip("\n")]
+    if with_notes and hint and _has_note(entries):
+        parts.append(hint.strip("\n"))
+    parts.append(lines)
+    return template_system.rstrip("\n") + "\n\n" + "\n".join(p for p in parts if p)
 
 
 def build_prompt(template: dict, entries, with_notes: bool = True) -> dict:
     """The engine's prompt object: {"system", "user"} (plus "style" when the template has one)."""
     out = dict(template)
-    out["system"] = build_system(template.get("system", ""), entries, with_notes)
+    head = out.pop("glossary_head", None)
+    hint = out.pop("glossary_notes_hint", "")
+    out["system"] = build_system(template.get("system", ""), entries, with_notes, head, hint)
     return out
 
 

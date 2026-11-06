@@ -5,6 +5,7 @@ from tkinter import filedialog, ttk
 
 from . import glossary as gl
 from . import promptset, prompts
+from .ordlist import InputField, SaveMark
 from .theme import P, mono_family
 
 COLS = ("term", "translation", "note")
@@ -21,10 +22,11 @@ class PromptWindow(tk.Toplevel):
         self.minsize(app.px(820), app.px(480))
         self.transient(app.root)
         self.mono = mono_family(app.root)
-        self.set = promptset.PromptSet(name="prompt")
+        self.set = self._blank()
         self.filter_mode = None
         self.pairs = []
         self._edit = None
+        self._quiet = True  # loading is not an edit
         self._build()
         path = app.prompt_path.get()
         if path:
@@ -45,12 +47,14 @@ class PromptWindow(tk.Toplevel):
         self.name_var = tk.StringVar()
         ttk.Entry(top, textvariable=self.name_var, width=22).pack(side="left")
         ttk.Label(top, text="Template", style="Dim.TLabel").pack(side="left", padx=(18, 8))
-        self.tpl_names = [t[1] for t in promptset.templates()]
+        self.tpl_names = [t["name"] for t in promptset.templates()]
         self.tpl_var = tk.StringVar()
         box = ttk.Combobox(top, textvariable=self.tpl_var, values=self.tpl_names, state="readonly", width=22)
         box.pack(side="left")
         box.bind("<<ComboboxSelected>>", lambda e: self._apply_template())
-        ttk.Button(top, text="Save", command=self.save).pack(side="right")
+        self.mark = SaveMark(top)
+        self.mark.pack(side="right")
+        ttk.Button(top, text="Save", command=self.save).pack(side="right", padx=(0, 10))
         ttk.Button(top, text="Open", command=self.open_file).pack(side="right", padx=(0, 8))
 
         panes = ttk.Frame(self, padding=(pad, 0, pad, pad))
@@ -82,10 +86,8 @@ class PromptWindow(tk.Toplevel):
         bar = ttk.Frame(right)
         bar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         ttk.Label(bar, text="Glossary").pack(side="left")
-        ttk.Button(bar, text="Export", command=self.export).pack(side="right")
-        ttk.Button(bar, text="Import", command=self.import_file).pack(side="right", padx=(0, 8))
         self.filter_var = tk.StringVar()
-        ttk.Entry(bar, textvariable=self.filter_var, width=18).pack(side="right", padx=(0, 12))
+        ttk.Entry(bar, textvariable=self.filter_var, width=18).pack(side="right")
         self.filter_var.trace_add("write", lambda *_: self._refresh())
         self.chips = ttk.Frame(right)
         self.chips.grid(row=1, column=0, sticky="ew", pady=(0, 6))
@@ -101,19 +103,28 @@ class PromptWindow(tk.Toplevel):
         sb.pack(side="right", fill="y")
         self.tree.pack(side="left", fill="both", expand=True)
         self.tree.bind("<Double-1>", self._begin_edit)
+        self.tree.tag_configure("new", background=P["bg3"])
         self.tree.bind("<Delete>", lambda e: self._delete())
         self.tree.bind("<Control-v>", lambda e: self._paste())
+        self.tree.bind("<Control-a>", lambda e: (self.tree.selection_set(self.tree.get_children()), "break")[1])
 
         add = ttk.Frame(right)
         add.grid(row=3, column=0, sticky="ew", pady=(8, 0))
         self.add_vars = [tk.StringVar() for _ in COLS]
         self.add_entries = []
         for i, v in enumerate(self.add_vars):
-            e = ttk.Entry(add, textvariable=v)
+            e = (InputField if i == 0 else ttk.Entry)(add, textvariable=v)
             e.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 6, 0))
             add.columnconfigure(i, weight=(3, 3, 2)[i])
             e.bind("<Return>", lambda ev: self._add())
             self.add_entries.append(e)
+        ttk.Button(add, text="Add", command=self._add).grid(row=0, column=len(COLS), padx=(8, 0))
+
+        foot = ttk.Frame(right)
+        foot.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+        ttk.Button(foot, text="Remove", command=self._delete).pack(side="left")
+        ttk.Button(foot, text="Import", style="Flat.TButton", command=self.import_file).pack(side="left", padx=(6, 0))
+        ttk.Button(foot, text="Export", style="Flat.TButton", command=self.export).pack(side="left", padx=(6, 0))
 
     def _text(self, parent, row):
         frame = ttk.Frame(parent)
@@ -129,14 +140,20 @@ class PromptWindow(tk.Toplevel):
         return t
 
     # ------------------------------------------------------------------ load / save
+    @staticmethod
+    def _blank():
+        head, hint = promptset.default_block()
+        return promptset.PromptSet(name="prompt", head=head, hint=hint)
+
     def _open(self, path):
         try:
             self.set = promptset.PromptSet.open(path)
         except (OSError, ValueError):
-            self.set = promptset.PromptSet(name="prompt")
+            self.set = self._blank()
         self._load_set()
 
     def _load_set(self):
+        self._quiet = True
         s = self.set
         self.name_var.set(s.name)
         self.system.delete("1.0", "end")
@@ -147,6 +164,12 @@ class PromptWindow(tk.Toplevel):
         self.user.edit_modified(False)
         self._refresh()
         self._check()
+        self._quiet = False
+        self.mark.set("saved")
+
+    def _dirty(self):
+        if not self._quiet:
+            self.mark.set("dirty")
 
     def _pull(self):
         s = self.set
@@ -162,21 +185,29 @@ class PromptWindow(tk.Toplevel):
             self._open(path)
 
     def save(self):
-        built = self._pull().save()
+        self._end_edit(commit=True)
+        try:
+            built = self._pull().save()
+        except OSError:
+            self.mark.set("failed")
+            return
         self.app.prompt_path.set(str(built))
         self.app.on_change()
+        self.mark.set("saved")
 
     def _apply_template(self):
-        for tid, name, language, system, user in promptset.templates():
-            if name == self.tpl_var.get():
+        for t in promptset.templates():
+            if t["name"] == self.tpl_var.get():
                 self.system.delete("1.0", "end")
-                self.system.insert("1.0", system)
+                self.system.insert("1.0", t["system"])
                 self.user.delete("1.0", "end")
-                self.user.insert("1.0", user)
-                if language and not self.set.language:
-                    self.set.language = language
+                self.user.insert("1.0", t["user"])
+                self.set.head, self.set.hint = t["head"], t["hint"]  # the glossary block follows the template's language
+                if t["language"] and not self.set.language:
+                    self.set.language = t["language"]
                 self._check()
                 self._refresh()
+                self._dirty()
                 return
 
     def _check(self):
@@ -190,6 +221,7 @@ class PromptWindow(tk.Toplevel):
         w = event.widget
         if w.edit_modified():
             self._check()
+            self._dirty()
             w.edit_modified(False)
 
     # ------------------------------------------------------------------ glossary table
@@ -243,24 +275,58 @@ class PromptWindow(tk.Toplevel):
         self.filter_mode = None if mode in (None, "language") else mode
         self._refresh()
 
-    def _add(self):
-        vals = [v.get().strip() for v in self.add_vars]
-        if not vals[0] and not vals[1]:
+    def _flash(self, idx, ms=1400):
+        """Show where rows are (new rows, or the row a duplicate matches): scroll to the first and tint all briefly."""
+        ids = [str(i) for i in idx]
+        if not ids:
             return
-        self.set.entries.append(gl.Entry(gl.norm(vals[0]), gl.norm(vals[1]), gl.norm(vals[2])))
+        if not all(self.tree.exists(i) for i in ids):  # hidden by a filter
+            self.filter_mode = None
+            self.filter_var.set("")
+            self._refresh()
+        self.tree.see(ids[0])
+        for i in ids:
+            self.tree.item(i, tags=("new",))
+
+        def clear():
+            if self.winfo_exists():
+                for i in ids:
+                    if self.tree.exists(i):
+                        self.tree.item(i, tags=())
+
+        self.after(ms, clear)
+
+    def _say(self, text, bad=False):
+        self.add_entries[0].say(text, bad)
+
+    def _add(self):
+        vals = [gl.norm(v.get().strip()) for v in self.add_vars]
+        if not vals[0] and not vals[1]:
+            if vals[2]:
+                self._say("Not a term", bad=True)
+            return
+        k = gl.key(vals[0])
+        same = [n for n, e in enumerate(self.set.entries) if k and gl.key(e.term) == k]
         for v in self.add_vars:
             v.set("")
+        if same:  # never add a second row for a term: show the one that is there
+            self._refresh()
+            self._flash(same[:1])
+            self._say("Already added")
+            return
+        self.set.entries.append(gl.Entry(*vals))
         self._refresh()
+        self._flash([len(self.set.entries) - 1])
+        self._dirty()
         self.add_entries[0].focus_set()
-        kids = self.tree.get_children()
-        if kids:
-            self.tree.see(kids[-1])
 
     def _delete(self):
         sel = sorted((int(i) for i in self.tree.selection()), reverse=True)
         for i in sel:
             del self.set.entries[i]
-        self._refresh()
+        if sel:
+            self._refresh()
+            self._dirty()
 
     def _paste(self):
         try:
@@ -269,8 +335,12 @@ class PromptWindow(tk.Toplevel):
             return "break"
         new = gl.from_text(text)
         if new:
+            first = len(self.set.entries)
             self.set.entries.extend(new)
             self._refresh()
+            self._flash(range(first, len(self.set.entries)))
+            self._dirty()
+            self._say("Added %d" % len(new))
         return "break"
 
     def _begin_edit(self, event):
@@ -308,6 +378,7 @@ class PromptWindow(tk.Toplevel):
             fields[COLS[ci]] = value
             self.set.entries[int(iid)] = gl.Entry(**fields)
             self._refresh()
+            self._dirty()
 
     def _escape(self):
         if self._edit:
@@ -323,16 +394,15 @@ class PromptWindow(tk.Toplevel):
         try:
             incoming = gl.load(path)
         except (OSError, ValueError):
-            self.chips_message("Format")
+            self._say("Format", bad=True)
             return
         if not self.set.entries:
             self.set.entries = list(incoming)
             self._refresh()
+            self._dirty()
+            self._say("Added %d" % len(incoming))
             return
         ImportPreview(self, incoming)
-
-    def chips_message(self, text):
-        ttk.Label(self.chips, text=text, style="Dim.TLabel").pack(side="left", padx=(8, 0))
 
     def export(self):
         path = filedialog.asksaveasfilename(parent=self, defaultextension=".json", filetypes=[("JSON", "*.json")],
@@ -344,6 +414,7 @@ class PromptWindow(tk.Toplevel):
     def apply_entries(self, entries):
         self.set.entries = list(entries)
         self._refresh()
+        self._dirty()
 
 
 class ImportPreview(tk.Toplevel):

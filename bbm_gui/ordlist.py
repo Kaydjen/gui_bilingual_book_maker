@@ -11,8 +11,8 @@ class InputField(ttk.Entry):
     """The entry above a list. It also says why an input did not take effect: the reason appears in the field itself
     (accent colour for a refusal, dim for "nothing changed") and goes away on the next key press, click or after 2.5 s."""
 
-    def __init__(self, parent):
-        super().__init__(parent)
+    def __init__(self, parent, **kw):
+        super().__init__(parent, **kw)
         self._saying = False
         self._job = None
         for seq in ("<Key>", "<ButtonPress-1>", "<<Paste>>"):
@@ -40,7 +40,7 @@ class InputField(ttk.Entry):
 
 class SaveMark(ttk.Label):
     """Always visible answer to "is it saved?": Saving between a change and the write, Saved after it, Not saved on a
-    write error."""
+    write error; Unsaved for windows that write on an explicit Save (edits made, nothing written yet)."""
 
     def __init__(self, parent, state="saved"):
         super().__init__(parent, text="")
@@ -49,7 +49,8 @@ class SaveMark(ttk.Label):
     def set(self, state):
         if not self.winfo_exists():
             return
-        text, style = {"saving": ("Saving", "TLabel"), "failed": ("Not saved", "Accent.TLabel")}.get(
+        text, style = {"saving": ("Saving", "TLabel"), "dirty": ("Unsaved", "TLabel"),
+                       "failed": ("Not saved", "Accent.TLabel")}.get(
             state, ("Saved", "Dim.TLabel"))
         self.configure(text=text, style=style)
 
