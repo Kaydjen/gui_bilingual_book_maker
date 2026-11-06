@@ -1,0 +1,415 @@
+"""Prompt window: the template text on the left, the glossary on the right. Saving builds the prompt file the
+engine reads."""
+import tkinter as tk
+from tkinter import filedialog, ttk
+
+from . import glossary as gl
+from . import promptset, prompts
+from .theme import P, mono_family
+
+COLS = ("term", "translation", "note")
+HEAD = {"term": "Term", "translation": "Translation", "note": "Note"}
+
+
+class PromptWindow(tk.Toplevel):
+    def __init__(self, app):
+        super().__init__(app.root)
+        self.app = app
+        self.title("Prompt")
+        self.configure(background=P["bg0"])
+        self.geometry("%dx%d" % (app.px(1180), app.px(700)))
+        self.minsize(app.px(820), app.px(480))
+        self.transient(app.root)
+        self.mono = mono_family(app.root)
+        self.set = promptset.PromptSet(name="prompt")
+        self.filter_mode = None
+        self.pairs = []
+        self._edit = None
+        self._build()
+        path = app.prompt_path.get()
+        if path:
+            self._open(path)
+        else:
+            self._load_set()
+        self.bind("<Escape>", lambda e: self._escape())
+        self.bind("<Control-s>", lambda e: self.save())
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+    # ------------------------------------------------------------------ layout
+    def _build(self):
+        a = self.app
+        pad = a.px(16)
+        top = ttk.Frame(self, padding=(pad, pad, pad, 8))
+        top.pack(fill="x")
+        ttk.Label(top, text="Name", style="Dim.TLabel").pack(side="left", padx=(0, 8))
+        self.name_var = tk.StringVar()
+        ttk.Entry(top, textvariable=self.name_var, width=22).pack(side="left")
+        ttk.Label(top, text="Template", style="Dim.TLabel").pack(side="left", padx=(18, 8))
+        self.tpl_names = [t[1] for t in promptset.templates()]
+        self.tpl_var = tk.StringVar()
+        box = ttk.Combobox(top, textvariable=self.tpl_var, values=self.tpl_names, state="readonly", width=22)
+        box.pack(side="left")
+        box.bind("<<ComboboxSelected>>", lambda e: self._apply_template())
+        ttk.Button(top, text="Save", command=self.save).pack(side="right")
+        ttk.Button(top, text="Open", command=self.open_file).pack(side="right", padx=(0, 8))
+
+        panes = ttk.Frame(self, padding=(pad, 0, pad, pad))
+        panes.pack(fill="both", expand=True)
+        panes.columnconfigure(0, weight=3, uniform="p")
+        panes.columnconfigure(1, weight=4, uniform="p")
+        panes.rowconfigure(0, weight=1)
+
+        left = ttk.Frame(panes)
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
+        left.rowconfigure(1, weight=4)
+        left.rowconfigure(3, weight=1)
+        left.columnconfigure(0, weight=1)
+        ttk.Label(left, text="System").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        self.system = self._text(left, 1)
+        head = ttk.Frame(left)
+        head.grid(row=2, column=0, sticky="ew", pady=(10, 4))
+        ttk.Label(head, text="User").pack(side="left")
+        self.problem = ttk.Label(head, text="", style="Dim.TLabel")
+        self.problem.pack(side="left", padx=(12, 0))
+        self.user = self._text(left, 3)
+        self.user.bind("<<Modified>>", self._modified)
+        self.system.bind("<<Modified>>", self._modified)
+
+        right = ttk.Frame(panes)
+        right.grid(row=0, column=1, sticky="nsew")
+        right.rowconfigure(2, weight=1)
+        right.columnconfigure(0, weight=1)
+        bar = ttk.Frame(right)
+        bar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        ttk.Label(bar, text="Glossary").pack(side="left")
+        ttk.Button(bar, text="Export", command=self.export).pack(side="right")
+        ttk.Button(bar, text="Import", command=self.import_file).pack(side="right", padx=(0, 8))
+        self.filter_var = tk.StringVar()
+        ttk.Entry(bar, textvariable=self.filter_var, width=18).pack(side="right", padx=(0, 12))
+        self.filter_var.trace_add("write", lambda *_: self._refresh())
+        self.chips = ttk.Frame(right)
+        self.chips.grid(row=1, column=0, sticky="ew", pady=(0, 6))
+
+        wrap = ttk.Frame(right)
+        wrap.grid(row=2, column=0, sticky="nsew")
+        self.tree = ttk.Treeview(wrap, columns=COLS, show="headings", selectmode="extended")
+        for c, w in zip(COLS, (220, 260, 160)):
+            self.tree.heading(c, text=HEAD[c])
+            self.tree.column(c, width=self.app.px(w), anchor="w")
+        sb = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        self.tree.pack(side="left", fill="both", expand=True)
+        self.tree.bind("<Double-1>", self._begin_edit)
+        self.tree.bind("<Delete>", lambda e: self._delete())
+        self.tree.bind("<Control-v>", lambda e: self._paste())
+
+        add = ttk.Frame(right)
+        add.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        self.add_vars = [tk.StringVar() for _ in COLS]
+        self.add_entries = []
+        for i, v in enumerate(self.add_vars):
+            e = ttk.Entry(add, textvariable=v)
+            e.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 6, 0))
+            add.columnconfigure(i, weight=(3, 3, 2)[i])
+            e.bind("<Return>", lambda ev: self._add())
+            self.add_entries.append(e)
+
+    def _text(self, parent, row):
+        frame = ttk.Frame(parent)
+        frame.grid(row=row, column=0, sticky="nsew")
+        t = tk.Text(frame, wrap="word", background=P["bg1"], foreground=P["text"], insertbackground=P["text"],
+                    relief="flat", borderwidth=0, padx=10, pady=8, undo=True, font=(self.mono, 10),
+                    selectbackground=P["bg3"], highlightthickness=1, highlightbackground=P["line"],
+                    highlightcolor=P["faint"], height=4)
+        sb = ttk.Scrollbar(frame, orient="vertical", command=t.yview)
+        t.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        t.pack(side="left", fill="both", expand=True)
+        return t
+
+    # ------------------------------------------------------------------ load / save
+    def _open(self, path):
+        try:
+            self.set = promptset.PromptSet.open(path)
+        except (OSError, ValueError):
+            self.set = promptset.PromptSet(name="prompt")
+        self._load_set()
+
+    def _load_set(self):
+        s = self.set
+        self.name_var.set(s.name)
+        self.system.delete("1.0", "end")
+        self.system.insert("1.0", s.system)
+        self.user.delete("1.0", "end")
+        self.user.insert("1.0", s.user)
+        self.system.edit_modified(False)
+        self.user.edit_modified(False)
+        self._refresh()
+        self._check()
+
+    def _pull(self):
+        s = self.set
+        s.name = self.name_var.get().strip() or "prompt"
+        s.system = self.system.get("1.0", "end-1c")
+        s.user = self.user.get("1.0", "end-1c")
+        s.language = self.app.to_var.get().strip()
+        return s
+
+    def open_file(self):
+        path = filedialog.askopenfilename(parent=self, filetypes=[("Prompt", "*.json"), ("All", "*.*")])
+        if path:
+            self._open(path)
+
+    def save(self):
+        built = self._pull().save()
+        self.app.prompt_path.set(str(built))
+        self.app.on_change()
+
+    def _apply_template(self):
+        for tid, name, language, system, user in promptset.templates():
+            if name == self.tpl_var.get():
+                self.system.delete("1.0", "end")
+                self.system.insert("1.0", system)
+                self.user.delete("1.0", "end")
+                self.user.insert("1.0", user)
+                if language and not self.set.language:
+                    self.set.language = language
+                self._check()
+                self._refresh()
+                return
+
+    def _check(self):
+        probs = prompts.check({"user": self.user.get("1.0", "end-1c")}, self.app.to_var.get())
+        if gl.check_system(self.system.get("1.0", "end-1c")):
+            probs.append("sysbraces")
+        names = {"user": "empty", "text": "{text}", "braces": "{ }", "language": "{language}", "sysbraces": "{ } system"}
+        self.problem.configure(text="  ".join(names[p] for p in probs))
+
+    def _modified(self, event):
+        w = event.widget
+        if w.edit_modified():
+            self._check()
+            w.edit_modified(False)
+
+    # ------------------------------------------------------------------ glossary table
+    def _rows_to_show(self):
+        entries = self.set.entries
+        idx = list(range(len(entries)))
+        v = gl.validate(entries)
+        if self.filter_mode == "dup":
+            idx = sorted(set(v.get("dup", [])))
+        elif self.filter_mode == "empty":
+            idx = sorted(set(v.get("empty", [])))
+        elif self.filter_mode == "similar":
+            keep = set()
+            for _, a, b in self.pairs:
+                keep.add(entries.index(a))
+                keep.add(entries.index(b))
+            idx = sorted(keep)
+        needle = self.filter_var.get().strip().lower()
+        if needle:
+            idx = [i for i in idx if needle in (entries[i].term + " " + entries[i].translation + " " + entries[i].note).lower()]
+        return idx
+
+    def _refresh(self):
+        entries = self.set.entries
+        self.pairs = gl.find_similar(entries) if len(entries) <= 800 else []
+        self.tree.delete(*self.tree.get_children())
+        for i in self._rows_to_show():
+            e = entries[i]
+            self.tree.insert("", "end", iid=str(i), values=(e.term, e.translation, e.note))
+        self._chips()
+
+    def _chips(self):
+        for w in self.chips.winfo_children():
+            w.destroy()
+        v = gl.validate(self.set.entries)
+        items = [("Empty", len(set(v.get("empty", []))), "empty"), ("Dup", len(set(v.get("dup", []))), "dup"),
+                 ("Similar", len(self.pairs), "similar")]
+        lang = self.set.language.strip().lower()
+        if lang and lang != self.app.to_var.get().strip().lower() and self.set.entries:
+            items.append(("Language", 0, "language"))
+        for label, n, mode in items:
+            if mode != "language" and not n:
+                continue
+            text = label if mode == "language" else "%s %d" % (label, n)
+            ttk.Button(self.chips, text=text, style="Chip.TButton",
+                       command=lambda m=mode: self._set_filter(m)).pack(side="left", padx=(0, 6))
+        if self.filter_mode:
+            ttk.Button(self.chips, text="✕", style="Chip.TButton", width=3, command=lambda: self._set_filter(None)).pack(side="left")
+
+    def _set_filter(self, mode):
+        self.filter_mode = None if mode in (None, "language") else mode
+        self._refresh()
+
+    def _add(self):
+        vals = [v.get().strip() for v in self.add_vars]
+        if not vals[0] and not vals[1]:
+            return
+        self.set.entries.append(gl.Entry(gl.norm(vals[0]), gl.norm(vals[1]), gl.norm(vals[2])))
+        for v in self.add_vars:
+            v.set("")
+        self._refresh()
+        self.add_entries[0].focus_set()
+        kids = self.tree.get_children()
+        if kids:
+            self.tree.see(kids[-1])
+
+    def _delete(self):
+        sel = sorted((int(i) for i in self.tree.selection()), reverse=True)
+        for i in sel:
+            del self.set.entries[i]
+        self._refresh()
+
+    def _paste(self):
+        try:
+            text = self.clipboard_get()
+        except tk.TclError:
+            return "break"
+        new = gl.from_text(text)
+        if new:
+            self.set.entries.extend(new)
+            self._refresh()
+        return "break"
+
+    def _begin_edit(self, event):
+        self._end_edit(commit=False)
+        if self.tree.identify_region(event.x, event.y) != "cell":
+            return
+        iid = self.tree.identify_row(event.y)
+        col = self.tree.identify_column(event.x)
+        if not iid:
+            return
+        ci = int(col.replace("#", "")) - 1
+        x, y, w, h = self.tree.bbox(iid, col)
+        entry = tk.Entry(self.tree, background=P["bg2"], foreground=P["text"], insertbackground=P["text"],
+                         relief="flat", borderwidth=0, highlightthickness=1, highlightbackground=P["faint"],
+                         highlightcolor=P["faint"])
+        entry.insert(0, self.tree.set(iid, COLS[ci]))
+        entry.place(x=x, y=y, width=w, height=h)
+        entry.focus_set()
+        entry.select_range(0, "end")
+        entry.bind("<Return>", lambda e: self._end_edit(True))
+        entry.bind("<Escape>", lambda e: self._end_edit(False))
+        entry.bind("<FocusOut>", lambda e: self._end_edit(True))
+        self._edit = (entry, iid, ci)
+
+    def _end_edit(self, commit):
+        if not self._edit:
+            return
+        entry, iid, ci = self._edit
+        self._edit = None
+        value = gl.norm(entry.get())
+        entry.destroy()
+        if commit:
+            e = self.set.entries[int(iid)]
+            fields = {"term": e.term, "translation": e.translation, "note": e.note}
+            fields[COLS[ci]] = value
+            self.set.entries[int(iid)] = gl.Entry(**fields)
+            self._refresh()
+
+    def _escape(self):
+        if self._edit:
+            self._end_edit(False)
+        else:
+            self.destroy()
+
+    # ------------------------------------------------------------------ import / export
+    def import_file(self):
+        path = filedialog.askopenfilename(parent=self, filetypes=[("Glossary", "*.json *.txt *.csv *.tsv"), ("All", "*.*")])
+        if not path:
+            return
+        try:
+            incoming = gl.load(path)
+        except (OSError, ValueError):
+            self.chips_message("Format")
+            return
+        if not self.set.entries:
+            self.set.entries = list(incoming)
+            self._refresh()
+            return
+        ImportPreview(self, incoming)
+
+    def chips_message(self, text):
+        ttk.Label(self.chips, text=text, style="Dim.TLabel").pack(side="left", padx=(8, 0))
+
+    def export(self):
+        path = filedialog.asksaveasfilename(parent=self, defaultextension=".json", filetypes=[("JSON", "*.json")],
+                                            initialfile=(self.name_var.get() or "glossary") + ".json")
+        if path:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(gl.to_plain_json(self.set.entries))
+
+    def apply_entries(self, entries):
+        self.set.entries = list(entries)
+        self._refresh()
+
+
+class ImportPreview(tk.Toplevel):
+    """Rows of the incoming glossary that differ from the current one. A changed term takes the file's
+    translation by default; a new term is left out until its box is ticked (the New box ticks all)."""
+
+    def __init__(self, parent, incoming):
+        super().__init__(parent)
+        self.parent = parent
+        app = parent.app
+        self.title("Import")
+        self.configure(background=P["bg0"])
+        self.geometry("%dx%d" % (app.px(900), app.px(560)))
+        self.transient(parent)
+        self.current = list(parent.set.entries)
+        self.incoming = incoming
+        self.rows = [r for r in gl.diff_rows(self.current, incoming) if r[0] in ("diff", "new")]
+        self.take = {i: r[0] == "diff" for i, r in enumerate(self.rows)}
+        pad = app.px(16)
+        top = ttk.Frame(self, padding=(pad, pad, pad, 8))
+        top.pack(fill="x")
+        ttk.Button(top, text="Apply", command=self._apply).pack(side="right")
+        ttk.Button(top, text="Current", command=lambda: self._set_all("diff", False)).pack(side="right", padx=(0, 8))
+        ttk.Button(top, text="File", command=lambda: self._set_all("diff", True)).pack(side="right", padx=(0, 8))
+        self.new_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(top, text="New", variable=self.new_var,
+                        command=lambda: self._set_all("new", self.new_var.get())).pack(side="left")
+        wrap = ttk.Frame(self, padding=(pad, 0, pad, pad))
+        wrap.pack(fill="both", expand=True)
+        cols = ("use", "status", "term", "current", "file")
+        self.tree = ttk.Treeview(wrap, columns=cols, show="headings", selectmode="none")
+        for c, t, w in (("use", "", 40), ("status", "", 60), ("term", "Term", 240), ("current", "Current", 280),
+                        ("file", "File", 280)):
+            self.tree.heading(c, text=t)
+            self.tree.column(c, width=app.px(w), anchor="w")
+        sb = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        self.tree.pack(side="left", fill="both", expand=True)
+        self.tree.bind("<Button-1>", self._click)
+        self.bind("<Escape>", lambda e: self.destroy())
+        self._fill()
+
+    def _fill(self):
+        self.tree.delete(*self.tree.get_children())
+        for i, (st, cur, inc) in enumerate(self.rows):
+            self.tree.insert("", "end", iid=str(i), values=(
+                "✓" if self.take[i] else "", st, (cur or inc).term,
+                cur.translation if cur else "", inc.translation if inc else ""))
+
+    def _click(self, event):
+        iid = self.tree.identify_row(event.y)
+        if iid and self.tree.identify_column(event.x) == "#1":
+            self.take[int(iid)] = not self.take[int(iid)]
+            self.tree.set(iid, "use", "✓" if self.take[int(iid)] else "")
+
+    def _set_all(self, status, value):
+        for i, r in enumerate(self.rows):
+            if r[0] == status:
+                self.take[i] = value
+        self._fill()
+
+    def _apply(self):
+        skip = {gl.key((c or i).term) for n, (st, c, i) in enumerate(self.rows) if not self.take[n]}
+        added = [i for n, (st, c, i) in enumerate(self.rows) if st == "new" and self.take[n]]
+        incoming = [e for e in self.incoming if gl.key(e.term) not in skip]
+        merged, _ = gl.merge(self.current, incoming, union=False)
+        self.parent.apply_entries(merged + added)
+        self.destroy()

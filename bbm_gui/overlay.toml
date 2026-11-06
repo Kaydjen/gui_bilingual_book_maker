@@ -1,0 +1,87 @@
+# GUI-owned overlay for the engine's flags. Lives in the GUI repo. Read by the GUI only (never by the helper).
+# Everything here is OPTIONAL: a flag with no entry still renders (kind inferred from the inventory, group
+# from engine signals). Keys are flag ids = first long option string, so spelling changes of the dest do not matter.
+format = 1
+
+# Groups: display order + label. A group not listed here but produced by a signal (e.g. a new "XYZ only"
+# marker) is shown after these, labelled by the signal's token.
+[[group]]
+id = "Translation"
+order = 10
+[[group]]
+id = "Model & endpoint"
+order = 20
+[[group]]
+id = "Context & glossary"
+order = 30
+[[group]]
+id = "Batching & speed"
+order = 40
+[[group]]
+id = "EPUB selection"
+order = 50
+[[group]]
+id = "Plan mode"
+order = 60
+[[group]]
+id = "PDF"
+order = 70
+[[group]]
+id = "Run"
+order = 80
+
+# Group rules: regex on the flag id, first match wins, tried AFTER per-flag entries and BEFORE engine signals.
+# They catch FUTURE flags of a known family (e.g. a new --pdf-foo) without any new line here.
+[[group_rule]]
+match = '^--(plan|classify|poetry|max-batch-units|batch_units)'
+group = "Plan mode"
+[[group_rule]]
+match = '^--(pdf|ocr|img|to-epub|device|pages|with-ocr|no-gpu|no-formula)'
+group = "PDF"
+[[group_rule]]
+match = '^--(use_context|context|no-context|glossary)'
+group = "Context & glossary"
+[[group_rule]]
+match = '^--(batch|accumulated_num|block_size|parallel)'
+group = "Batching & speed"
+[[group_rule]]
+match = '^--(exclude|only_filelist|translate-tags|allow_navigable|sentence_mode)'
+group = "EPUB selection"
+[[group_rule]]
+match = '^--(test|resume|quiet|retranslate)'
+group = "Run"
+[[group_rule]]
+match = '^--(key|model|api|provider|proxy|temperature|interval|no-thinking|extra)'
+group = "Model & endpoint"
+[[group_rule]]
+match = '^--(book_name|language|source_lang|prompt|single_translate|translation|no_disclosure)'
+group = "Translation"
+
+# Per-flag entries: only where inference is not enough.
+#   widget   = override kind (toggle, toggle_inverted, text, int, float, enum, combo, file, secret, multi, optional_value, json, csv)
+#   label    = display name (default: derived from the flag id; inverted toggles drop the no- prefix)
+#   secret   = true -> masked in the UI and in the displayed command
+#   env      = environment variable that carries a secret instead of argv
+#   simple   = false -> hidden until "advanced" is switched on (default true when not hidden/deprecated by the engine)
+#   order    = sort key inside the group (default: engine source order)
+#   parts    = for multi: kind of each value
+#   placeholder = text shown in an untouched field when the parser default is None/derived (parser defaults are NOT shown as values)
+[flag."--key"]
+env = "BBM_API_KEY"
+label = "API key"
+[flag."--book_name"]
+label = "Book"
+order = 0
+[flag."--retranslate"]
+parts = ["file", "text", "text", "text"]
+simple = false
+[flag."--poetry-group-size"]
+simple = false
+[flag."--model_list"]
+simple = false
+[flag."--no_disclosure"]
+label = "Machine-translation credit"
+[flag."--no-formula-images"]
+label = "Formula images"
+[flag."--accumulated_num"]
+placeholder = "auto"
