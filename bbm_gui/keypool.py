@@ -19,6 +19,11 @@ def parse(text):
     return out
 
 
+def looks_like_key(token):
+    """A soft check that keeps pasted prose out of the list: no real key is this short."""
+    return len(token) >= 20
+
+
 def fingerprint(key):
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
 

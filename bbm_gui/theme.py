@@ -80,6 +80,12 @@ def apply(root):
     style.configure("TEntry", fieldbackground=P["bg1"], padding=(6, 5), borderwidth=1)
     style.map("TEntry", bordercolor=[("focus", P["faint"])], lightcolor=[("focus", P["faint"])],
               darkcolor=[("focus", P["faint"])])
+    style.configure("Dim.TEntry", fieldbackground=P["bg1"], padding=(6, 5), borderwidth=1, foreground=P["dim"])
+    style.configure("Bad.TEntry", fieldbackground=P["bg1"], padding=(6, 5), borderwidth=1, bordercolor=P["accent"],
+                    foreground=P["accent"],
+                    lightcolor=P["accent"], darkcolor=P["accent"])
+    style.map("Bad.TEntry", bordercolor=[("focus", P["accent"])], lightcolor=[("focus", P["accent"])],
+              darkcolor=[("focus", P["accent"])])
     style.configure("TCombobox", fieldbackground=P["bg1"], background=P["bg2"], arrowcolor=P["dim"], padding=(6, 5),
                     arrowsize=14, borderwidth=1)
     style.map("TCombobox", fieldbackground=[("readonly", P["bg1"]), ("disabled", P["bg0"])],

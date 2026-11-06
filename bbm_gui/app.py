@@ -103,6 +103,10 @@ class App:
             v.trace_add("write", lambda *_: self.on_change())
         self.preset.trace_add("write", lambda *_: self._apply_preset(self.preset.get()))
         self.source.trace_add("write", lambda *_: self.on_change())
+        self._save_job = None
+        self.save_state = "saved"  # saved / saving / failed: what the Keys and Models windows show
+        for v in (self.key, self.model):  # keys and models are written to disk at once, not only on close
+            v.trace_add("write", lambda *_: self._schedule_save())
         self.pool().purge(time.time())
 
         root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -430,6 +434,18 @@ class App:
         except OSError:
             pass
 
+    def _schedule_save(self):
+        if self._save_job:
+            self.root.after_cancel(self._save_job)
+        self._set_save_state("saving")
+        self._save_job = self.root.after(300, self.save_settings)
+
+    def _set_save_state(self, state):
+        self.save_state = state
+        for w in (self.keys_win, self.models_win):
+            if w is not None and w.winfo_exists():
+                w.mark.set(state)
+
     def reset_marks(self):
         self.bad_keys = set()
         self.settings["spent"] = {}
@@ -516,7 +532,15 @@ class App:
         pp = self.prompt_path.get()
         self.prompt_btn.configure(text=Path(pp).name if pp else "none")
         models = self.model_list()
-        self.model_btn.configure(text=("%d models" % len(models)) if len(models) > 1 else (models[0] if models else "none"))
+        if self.runner.running and self.cur_pair and self.cur_pair[1]:
+            mtext = self.cur_pair[1]
+        elif models:
+            mtext = models[0] + (" +%d" % (len(models) - 1) if len(models) > 1 else "")
+        else:
+            mtext = "none"
+        self.model_btn.configure(text=mtext, style="SlotNeed.TButton" if not models else "Slot.TButton")
+        if self.models_win is not None and self.models_win.winfo_exists():
+            self.models_win.refresh()
         keys = self.key_list()
         pool = self.pool()
         usable = pool.usable_keys(time.time())
@@ -830,7 +854,10 @@ class App:
         try:
             s.save()
         except OSError:
-            pass
+            self._set_save_state("failed")
+            return False
+        self._set_save_state("saved")
+        return True
 
     def on_close(self):
         self.save_settings()

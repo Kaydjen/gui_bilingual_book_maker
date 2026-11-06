@@ -41,6 +41,10 @@ class PoolTest(unittest.TestCase):
         self.assertEqual(p.state("k", 0), ("used", 50))
         self.assertEqual(p.usable_keys(0), [])
 
+    def test_looks_like_key(self):
+        self.assertTrue(kp.looks_like_key("AQ.Ab8RN6JWXT9Y-UAZLui_dMi57"))
+        self.assertFalse(kp.looks_like_key("hello"))
+
     def test_purge_and_mask(self):
         p = kp.Pool(["k"], ["m"], {kp.fingerprint("k") + "|m": 5})
         p.purge(10)
