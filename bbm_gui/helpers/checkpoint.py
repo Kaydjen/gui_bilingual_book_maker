@@ -2,10 +2,12 @@
 that engine) and never imports the engine.
 
   checkpoint.py inspect <bin> <marker>
-  checkpoint.py repair  <bin> <marker> [--drop-fingerprint]
+  checkpoint.py repair  <bin> <marker> [--drop-fingerprint] [--accept N]
 
+A paragraph counts as failed when its stored translation holds the marker or is empty.
 repair cuts the translations at the first failed paragraph (so a resume translates it again) and,
 with --drop-fingerprint, removes the record of the model and prompt that wrote the checkpoint.
+--accept N leaves the failed paragraphs among the first N alone (they were already tried again).
 The file is replaced atomically. stdout is one JSON document.
 """
 import json
@@ -15,7 +17,7 @@ import sys
 
 
 def _failed(item, marker):
-    return isinstance(item, str) and marker in item
+    return isinstance(item, str) and (marker in item or not item.strip())
 
 
 def _load(path):
@@ -46,10 +48,10 @@ def inspect(path, marker):
     }
 
 
-def repair(path, marker, drop_fingerprint):
+def repair(path, marker, drop_fingerprint, accept=0):
     kind, state = _load(path)
     items = _items(state)
-    first = next((i for i, t in enumerate(items) if _failed(t, marker)), None)
+    first = next((i for i, t in enumerate(items) if i >= accept and _failed(t, marker)), None)
     keep = len(items) if first is None else first
     if isinstance(state, dict):
         state["translations"] = items[:keep]
@@ -75,7 +77,9 @@ def main():
         if cmd == "inspect":
             out = inspect(path, marker)
         elif cmd == "repair":
-            out = repair(path, marker, "--drop-fingerprint" in sys.argv[4:])
+            rest = sys.argv[4:]
+            accept = int(rest[rest.index("--accept") + 1]) if "--accept" in rest else 0
+            out = repair(path, marker, "--drop-fingerprint" in rest, accept)
         else:
             sys.exit("usage")
     except Exception as e:

@@ -75,13 +75,186 @@ order = 0
 [flag."--retranslate"]
 parts = ["file", "text", "text", "text"]
 simple = false
+label = "Retranslate"
+tier = "more"
 [flag."--poetry-group-size"]
 simple = false
 [flag."--model_list"]
 simple = false
-[flag."--no_disclosure"]
-label = "Machine-translation credit"
 [flag."--no-formula-images"]
 label = "Formula images"
-[flag."--accumulated_num"]
-placeholder = "auto"
+
+# Flag menu. Keys (all optional):
+#   tier     = "common" (listed first) or "more"; a flag without a tier is listed only under "All flags"
+#   menu     = sub-head of the Common section
+#   reason   = why a flag under "All flags" is rarely wanted (dim tag)
+#   editor   = int, float, enum, csv, color, text, file, dir, json, toggle (read by the flag panel only, never by the
+#              command builder: the command is built from the engine's own kind)
+#   range, step, suggest, placeholder, default_label = how the value is entered
+#   on_only  = an optional value that is only switched on (no choices offered)
+#   about, example, seen = our text; shown only while `seen` matches the engine's text (see flagdocs.py)
+#   Pace flags (--interval, --block_size, --accumulated_num) are owned by the Pace window and never offered.
+[flag."--test"]
+label = "Test"
+tier = "common"
+menu = "Test and tuning"
+editor = "int"
+range = [1, 1000]
+step = 1
+suggest = ["10", "20", "50"]
+default_label = "10"
+about = "Lets you translate only the first few paragraphs, to check the result before translating the whole book."
+example = "you set 10, so only the first 10 paragraphs are translated and a short book comes out in minutes."
+seen = "e8a327b5"
+[flag."--temperature"]
+label = "Temperature"
+tier = "common"
+menu = "Test and tuning"
+editor = "float"
+range = [0.1, 2.0]
+step = 0.1
+suggest = ["0.4", "0.7", "1.0"]
+below = "0.1 - 2: at 0 a blocked paragraph fails on every retry"
+about = "Lets you set how much the wording varies between runs; higher values vary more, and very low values can make a blocked paragraph fail on every retry."
+example = "you set 0.4, so the wording varies a little between runs and a blocked paragraph can still pass on a retry."
+seen = "6492a9ee"
+[flag."--use_context"]
+label = "Context"
+tier = "common"
+menu = "Test and tuning"
+on_only = true
+about = "Lets you show the model the last paragraphs it translated, so names and tone stay consistent."
+example = "you turn it on, so a character addressed informally in one paragraph stays informal in the next."
+seen = "f2cd8ea9"
+[flag."--translate-tags"]
+label = "Tags to translate"
+tier = "common"
+menu = "Book parts"
+editor = "csv"
+suggest = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "dt", "dd", "figcaption", "td", "th", "div"]
+default_label = "p"
+about = "Lets you choose which HTML tags of the book are translated, replacing the app's list of body text, headings, list items, quotes and table cells."
+example = "you list p,h1,h2, so chapter titles are translated with the text while list items and table cells stay in the original."
+seen = "683444ec"
+[flag."--exclude-translate-tags"]
+label = "Tags to keep"
+tier = "common"
+menu = "Book parts"
+editor = "csv"
+suggest = ["sup", "code", "pre", "kbd", "samp"]
+about = "Lets you keep the content of some HTML tags in the original."
+example = "you list sup,code,pre, so footnote numbers and code samples are left as they are."
+seen = "b9213fb1"
+[flag."--exclude_filelist"]
+label = "Skip files"
+tier = "common"
+menu = "Book parts"
+editor = "csv"
+placeholder = "nav.xhtml"
+about = "Lets you leave whole files of the book untouched, such as a cover page (in a translation-only run the app adds the contents file to this list by itself)."
+example = "you list cover.xhtml, so that file keeps its original text."
+seen = "57fc0df0"
+[flag."--only_filelist"]
+label = "Only files"
+tier = "common"
+menu = "Book parts"
+editor = "csv"
+placeholder = "ch03.xhtml"
+about = "Lets you translate just some files of the book."
+example = "you list ch03.xhtml, so only that file is translated and the rest stays in the original."
+seen = "e4d30b99"
+[flag."--allow_navigable_strings"]
+label = "Loose text"
+tier = "common"
+menu = "Book parts"
+about = "Lets you translate text that sits directly in a page, outside any paragraph tag."
+example = "you turn it on, so text placed straight inside a div is translated too."
+seen = "f4936b02"
+[flag."--sentence_mode"]
+label = "By sentence"
+tier = "common"
+menu = "Output look"
+about = "Lets you alternate original and translation sentence by sentence inside each paragraph of a bilingual book."
+example = "you turn it on, so a three-sentence paragraph shows each sentence followed by its translation."
+seen = "86c4cf86"
+[flag."--translation_color"]
+label = "Color"
+tier = "common"
+menu = "Output look"
+editor = "color"
+suggest = ["#808080", "#1e90ff", "#8b0000"]
+placeholder = "#1e90ff"
+about = "Lets you tint the translated text so it differs from the original."
+example = "you pick grey, so each translated paragraph appears in grey under its original."
+seen = "9de4348f"
+[flag."--translation_style"]
+label = "Style"
+tier = "common"
+menu = "Output look"
+editor = "text"
+placeholder = "color: #808080; font-style: italic;"
+about = "Lets you give the translated text any CSS look, such as italic or a smaller font."
+example = "you set font-style: italic;, so the translations appear in italics."
+seen = "85035083"
+[flag."--no_disclosure"]
+label = "No credit line"
+tier = "common"
+menu = "Output look"
+about = "Lets you leave out the line \"Translated by <model>, <year>.\" that the engine adds below the book intro."
+example = "you add it, so the finished book opens without that line and without the metadata file."
+seen = "dbf707cc"
+[flag."--translation-metadata"]
+label = "Metadata file"
+tier = "common"
+menu = "Output look"
+about = "Lets you store the model name and the date inside the book."
+example = "you add it, so the book carries a bbm_translation_metadata.json with those two facts."
+seen = "d507b00a"
+[flag."--proxy"]
+label = "Proxy"
+tier = "common"
+menu = "Connection"
+placeholder = "http://127.0.0.1:7890"
+about = "Lets you send the engine's requests through a proxy server."
+example = "you set http://127.0.0.1:7890, so the traffic leaves through that local proxy."
+seen = "2d96430b"
+[flag."--api_base"]
+label = "Server"
+tier = "common"
+menu = "Connection"
+placeholder = "http://127.0.0.1:18080"
+about = "Lets you send requests to another address instead of Google's, such as a gateway or a local test server."
+example = "you set http://127.0.0.1:18080, so the engine talks to that server."
+seen = "f7f3d2e0"
+[flag."--api_format"]
+label = "Format"
+tier = "more"
+about = "Lets you choose which service API the engine talks to."
+example = "you pick gemini, so requests go to the Gemini API with the keys of the Keys list."
+seen = "77212d52"
+[flag."--test_num"]
+label = "Test paragraphs"
+[flag."--quiet"]
+reason = "Hides progress"
+[flag."--parallel-workers"]
+reason = "No quick stop"
+[flag."--context_paragraph_limit"]
+reason = "Other API formats"
+[flag."--context-compact-at"]
+reason = "Other API formats"
+[flag."--no-context-compact"]
+reason = "Other API formats"
+[flag."--no-thinking"]
+reason = "Other API formats"
+[flag."--extra_body"]
+reason = "Other API formats"
+[flag."--extra_headers"]
+reason = "Other API formats"
+[flag."--batch"]
+reason = "Other API formats"
+[flag."--batch-use"]
+reason = "Other API formats"
+[flag."--batch-api"]
+reason = "Other API formats"
+[flag."--batch_size"]
+reason = "Other API formats"

@@ -60,11 +60,14 @@ class ModelsWindow(tk.Toplevel):
         pool = self.app.pool()
         now = time.time()
         keys = pool.keys
-        spent = [k for k in keys if pool.is_spent(k, model, now)]
+        spent = [k for k in keys if pool.blocked(k, model, now)]
+        dead = [k for k in spent if pool.kind(k, model, now) == "dead"]
+        if keys and len(dead) == len(keys):
+            return "used", "Not available"
         if keys and len(spent) == len(keys):
-            return "used", "Used up until " + runner.local_hhmm(min(pool.spent[pool._id(k, model)] for k in spent))
+            return "used", "Until " + runner.local_hhmm(min(pool.until(k, model) for k in spent if k not in dead))
         if spent:
-            return "part", "Used up on %d of %d keys" % (len(spent), len(keys))
+            return "part", "Resting on %d of %d keys" % (len(spent), len(keys))
         if self.app.runner.running and self.app.cur_pair and self.app.cur_pair[1] == model:
             return "run", "Running"
         return "", ""

@@ -33,10 +33,21 @@ def guess_python(root):
 
 def child_env(extra=None):
     env = dict(os.environ)
-    env.update({"PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1"})
+    env.update({"PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1",
+                "COLUMNS": "4000"})  # a wide console keeps a retry block on one line
     if extra:
         env.update(extra)
     return env
+
+
+def python_version(python, timeout=20):
+    """(major, minor) of the engine's interpreter, or None if it cannot be asked."""
+    try:
+        proc = _run([python, "-I", "-B", "-c", "import sys;print('%d.%d' % sys.version_info[:2])"], timeout)
+        major, minor = proc.stdout.decode("ascii", "replace").strip().split(".")
+        return int(major), int(minor)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
 
 
 def engine_key(root, python):

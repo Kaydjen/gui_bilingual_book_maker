@@ -103,6 +103,17 @@ class OrderedList(ttk.Frame):
             self.tree.insert("", "end", iid=str(n), values=self.render(item), tags=(tag,) if tag else ())
         self.tree.selection_set([str(n) for n, i in enumerate(self.items) if i in keep])
 
+    def rerender(self):
+        """Refresh the texts in place (a countdown) without touching the selection or a drag in progress."""
+        for n, item in enumerate(self.items):
+            iid = str(n)
+            if self.tree.exists(iid):
+                self.tree.item(iid, values=self.render(item))
+                tags = self.tree.item(iid, "tags")
+                if "new" not in tags:
+                    tag = self.tag(item)
+                    self.tree.item(iid, tags=(tag,) if tag else ())
+
     def flash(self, items, ms=1400):
         """Show where the items are: scroll to the first one and tint all briefly."""
         ids = [str(n) for n, i in enumerate(self.items) if i in items]

@@ -1,0 +1,21 @@
+Retry attempt 1 due to ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 
+429, 'message': 'You exceeded your current quota, please check your plan and 
+billing details. For more information on this error, head to: 
+https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current 
+usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: 
+generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 
+500, model: gemini-3.1-flash-lite, description: Generate content requests per 
+day limit exceeded on Free Tier. See 
+https://ai.google.dev/gemini-api/docs/rate-limits.\nPlease retry in 
+15h20m37.062688029s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 
+'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more 
+about Gemini API quotas', 'url': 
+'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 
+'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'description': 
+'Generate content requests per day limit exceeded on Free Tier. See 
+https://ai.google.dev/gemini-api/docs/rate-limits.', 'quotaMetric': 
+'generativelanguage.googleapis.com/generate_content_free_tier_requests', 
+'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 
+'quotaDimensions': {'location': 'global', 'model': 'gemini-3.1-flash-lite'}, 
+'quotaValue': '500'}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 
+'retryDelay': '55237s'}]}} (rotating key)

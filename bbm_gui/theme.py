@@ -110,4 +110,21 @@ def apply(root):
                     borderwidth=0)
     style.map("Treeview.Heading", background=[("active", P["bg3"])])
     style.configure("Chip.TButton", background=P["bg2"], foreground=P["text"], padding=(10, 3), borderwidth=0)
+    # flag chips: a preset flag is dim, my own is normal, a problem is accent text; the chip being edited has an outline
+    for name, bg, fg in (("ChipPreset", P["bg1"], P["dim"]), ("ChipMine", P["bg3"], P["text"]),
+                         ("ChipBad", P["bg1"], P["accent"])):
+        style.configure(name + ".TButton", background=bg, foreground=fg, padding=(10, 3), borderwidth=1, bordercolor=bg,
+                        lightcolor=bg, darkcolor=bg, relief="flat")
+        style.map(name + ".TButton", background=[("active", P["bg2"])], foreground=[("active", fg)])
+        style.configure(name + "Edit.TButton", background=bg, foreground=fg, padding=(10, 3), borderwidth=1,
+                        bordercolor=P["dim"], lightcolor=P["dim"], darkcolor=P["dim"], relief="flat")
+        style.map(name + "Edit.TButton", background=[("active", P["bg2"])], foreground=[("active", fg)])
+    style.configure("Sug.TButton", background=P["bg0"], foreground=P["dim"], padding=(6, 2), borderwidth=0)
+    style.map("Sug.TButton", foreground=[("active", P["text"])], background=[("active", P["bg0"])])
+    for name, edge in (("TSpinbox", P["line"]), ("Bad.TSpinbox", P["accent"])):
+        style.configure(name, fieldbackground=P["bg1"], background=P["bg2"], arrowcolor=P["dim"], padding=(6, 5),
+                        arrowsize=14, borderwidth=1, bordercolor=edge, lightcolor=edge, darkcolor=edge,
+                        foreground=P["accent"] if name.startswith("Bad") else P["text"], insertcolor=P["text"])
+    style.map("TSpinbox", bordercolor=[("focus", P["faint"])], lightcolor=[("focus", P["faint"])],
+              darkcolor=[("focus", P["faint"])])
     return style

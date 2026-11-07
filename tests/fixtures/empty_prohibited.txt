@@ -1,0 +1,11 @@
+  5%|▌         | 1/20 [00:12<04:01, 12.70s/it]
+Retry attempt 1 due to AttributeError: 'NoneType' object has no attribute 'strip' (rotating key)
+Retry attempt 2 due to AttributeError: 'NoneType' object has no attribute 'strip' (rotating key)
+Retry attempt 3 due to AttributeError: 'NoneType' object has no attribute 'strip' (rotating key)
+Retry attempt 4 due to AttributeError: 'NoneType' object has no attribute 'strip' (rotating key)
+Retry attempt 5 due to AttributeError: 'NoneType' object has no attribute 'strip' (rotating key)
+Retry attempt 6 due to AttributeError: 'NoneType' object has no attribute 'strip' (rotating key)
+Translation failed after all retry attempts: 'NoneType' object has no attribute 'strip'
+And there were certain friends of younger days who came to him and said: "You, Arkad, are more fortunate than we."
+[Translation failed for this paragraph]
+ 10%|█         | 2/20 [00:30<04:30, 15.00s/it]

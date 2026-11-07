@@ -1,4 +1,5 @@
 """Form state -> argv list (the truth) -> display strings per shell (a view, never executed)."""
+import os
 import re
 import shlex
 
@@ -22,12 +23,26 @@ def is_secret(f, overlay):
     return bool(ov.get("secret")) or kind_of(f, overlay) == "secret"
 
 
+COMPANIONS = {"--test": "--test_num"}  # "--test" may carry a number: it is emitted as "--test --test_num=N"
+
+
 def build_argv(inv, state, overlay=None, mask=False):
     """state: {flag_id: value}. An absent key, None or '' means untouched and is not emitted: a typed default
-    differs from silence for this engine. Flags missing from the inventory are returned in `dropped`."""
+    differs from silence for this engine. Flags missing from the inventory, and a companion value that would
+    be ignored by the engine (--test_num without --test), are returned in `dropped`."""
     byid = {f["id"]: f for f in inv["flags"]}
     items = []
     dropped = []
+    state = dict(state)
+    for main, comp in COMPANIONS.items():
+        val = state.get(main)
+        if val not in (None, "", False, True) and comp in byid:
+            state[main] = True
+            state[comp] = val
+        elif comp in state and not state.get(main):
+            if state[comp] not in (None, ""):
+                dropped.append(comp)
+            del state[comp]
     for fid, val in state.items():
         f = byid.get(fid)
         if f is None:
@@ -49,7 +64,7 @@ def build_argv(inv, state, overlay=None, mask=False):
                 argv.append(opt)
         elif kind == "multi":
             argv.append(opt)
-            argv += [str(x) for x in val]
+            argv += [str(x) for x in (split_extra(val) if isinstance(val, str) else val)]
         elif kind == "optional_value":
             argv.append(opt if val is True else "%s=%s" % (opt, val))
         else:
@@ -58,12 +73,60 @@ def build_argv(inv, state, overlay=None, mask=False):
     return argv, dropped
 
 
-def split_extra(text):
-    """Extra args typed by the user (shell-like words)."""
+def split_extra(text, windows=None):
+    """Words typed by the user. On Windows a backslash is a path separator, not an escape, so quotes are
+    handled but backslashes are kept."""
+    windows = (os.name == "nt") if windows is None else windows
     try:
-        return shlex.split(text, posix=True)
+        if not windows:
+            return shlex.split(text, posix=True)
+        words = shlex.split(text, posix=False)
     except ValueError:
         return text.split()
+    return [w[1:-1] if len(w) >= 2 and w[0] == w[-1] and w[0] in "\"'" else w for w in words]
+
+
+def parse_extra(text, inv=None, overlay=None, windows=None):
+    """Typed flags -> ({flag_id: value}, [(token, reason)]). Owned flags and stray words are refused;
+    flags the engine does not have are kept as typed (an engine update may bring them back)."""
+    from . import flagrules
+
+    byid = {f["id"]: f for f in (inv or {}).get("flags", [])}
+    byopt = {o: f for f in byid.values() for o in f["options"]}
+    words = split_extra(text, windows)
+    out, refused = {}, []
+    i = 0
+    while i < len(words):
+        w = words[i]
+        i += 1
+        if not w.startswith("--"):
+            refused.append((w, "Not a flag"))
+            continue
+        opt, eq, val = w.partition("=")
+        f = byopt.get(opt)
+        fid = f["id"] if f else opt
+        if flagrules.is_owned(fid):
+            refused.append((opt, flagrules.REASON_OWNED))
+            if not eq and i < len(words) and not words[i].startswith("--"):
+                i += 1  # its value
+            continue
+        kind = kind_of(f, overlay) if f else None
+        if kind in ("toggle", "toggle_inverted") or (f is None and not eq and (i >= len(words) or words[i].startswith("--"))):
+            out[fid] = False if kind == "toggle_inverted" else True
+        elif kind == "multi":
+            vals = [val] if eq else []
+            while i < len(words) and not words[i].startswith("--"):
+                vals.append(words[i])
+                i += 1
+            out[fid] = vals
+        elif eq:
+            out[fid] = val
+        elif i < len(words) and not words[i].startswith("--"):
+            out[fid] = words[i]
+            i += 1
+        else:
+            out[fid] = True  # optional value given without one
+    return out, refused
 
 
 def q_posix(a):

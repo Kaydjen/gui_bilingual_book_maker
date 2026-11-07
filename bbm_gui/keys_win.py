@@ -64,10 +64,14 @@ class KeysWindow(tk.Toplevel):
         st, until = self._state(key)
         if st == "bad":
             text = "Invalid"
-        elif st == "used":
-            text = "Used up until " + runner.local_hhmm(until)
+        elif st == "dead":
+            text = "No model available"
+        elif st == "day":
+            text = "Until " + runner.local_hhmm(until)
+        elif st == "wait":
+            text = "Wait " + runner.clock(until - time.time())
         elif st == "part":
-            text = "Some models used up until " + runner.local_hhmm(until)
+            text = "Some models until " + runner.local_hhmm(until)
         elif key == self.app.active_key:
             text = "Running"
         else:
@@ -76,7 +80,12 @@ class KeysWindow(tk.Toplevel):
 
     def _tag(self, key):
         st = self._state(key)[0]
-        return {"bad": "bad", "used": "dim"}.get(st, "")
+        return {"bad": "bad", "dead": "dim", "day": "dim", "wait": "dim"}.get(st, "")
+
+    def tick(self):
+        """Once a second: the countdowns in the state column."""
+        if self.winfo_exists():
+            self.list.rerender()
 
     # ------------------------------------------------------------------ actions
     def _set_keys(self, keys):

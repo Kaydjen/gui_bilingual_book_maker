@@ -220,6 +220,12 @@ def cmd_runtime(root):
                 out["compat"] = compat_rows(mod, dests, optmap)
             except Exception as e:
                 out["compat"] = []; out["compat_error"] = repr(e)
+            try:  # the engine's language table: {tag: name} and {name: tag} aliases
+                utils = importlib.import_module("book_maker.utils")
+                out["languages"] = {str(k): str(v) for k, v in utils.LANGUAGES.items()}
+                out["language_aliases"] = {str(k): str(v) for k, v in getattr(utils, "TO_LANGUAGE_CODE", {}).items()}
+            except Exception:
+                pass
             out["import_seconds"] = round(time.perf_counter() - t0, 2)
             out["python"] = sys.version.split()[0]
             out["errors_before_success"] = errs
