@@ -36,7 +36,7 @@ class FlagBar(ttk.Frame):
     def refresh(self):
         app = self.app
         items = flagmenu.chips(app.flagstate, app.inventory, app.overlay, self.editing)
-        sig = (tuple(items), self.editing, self.is_open, bool(app.inventory))
+        sig = (tuple(items), self.editing, self.is_open, bool(app.inventory), app.flagstate.differs())
         if self.is_open:
             self.panel.refresh_marks()
         if sig == self._sig:
@@ -55,7 +55,16 @@ class FlagBar(ttk.Frame):
         if app.inventory:
             self.plus = ttk.Button(self.strip, text="+", style="Chip.TButton", width=3, command=self.toggle)
             self._buttons.append(self.plus)
+            if app.flagstate.differs():  # a preset flag is off or changed: one click brings the defaults back
+                self._buttons.append(ttk.Button(self.strip, text="Defaults", style="Chip.TButton", width=9,
+                                                command=self.restore_defaults))
         self.strip.set(self._buttons)
+
+    def restore_defaults(self):
+        if self.app.flagstate.reset_preset():
+            self.editing = None
+            self.app.flags_changed()
+        self.refresh()
 
     # ------------------------------------------------------------------ panel
     def toggle(self):

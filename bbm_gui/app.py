@@ -30,6 +30,8 @@ PRESETS = {
     "Custom": {"--api_format": "gemini", flagrules.TAGS_FLAG: flagrules.DEFAULT_TAGS},
 }
 LOG_LINES = 6000
+DEFAULT_PROMPT = "Default"  # no --prompt: the engine's own prompt
+PROMPT_SEPARATOR = "-" * 14  # between the shipped templates and the user's own prompts in the dropdown
 LINE_CUT = 500
 RIDE_OUT_MAX = 10  # seconds of per-minute cooldown the engine may wait out itself
 HOP_GUARDS = ("quota", "busy", "key", "model")
@@ -83,6 +85,7 @@ class App:
         self.busy_engine = False
         self.settings_win = None
         self.prompt_win = None
+        self._label_cache = (None, "")
         self.keys_win = None
         self.models_win = None
         self.pace_win = None
@@ -95,6 +98,7 @@ class App:
         self.cur_pair = None  # (key, model) of the run in progress
         self.run_note = ""  # chip text while a run uses one of several keys
         self._switching = False
+        self._run_job = None  # folder of the job the current run (with its hops and waits) belongs to
         self._switch_job = None  # the pending "start the next pair" callback
         self.waiting = False  # no process: every pair rests, the run restarts by itself at wait_until
         self.wait_until = 0.0
@@ -116,13 +120,12 @@ class App:
         self.prompt_path = tk.StringVar(value=s.get("prompt", ""))
         self.folder = tk.StringVar(value=s.get("folder", ""))
         self._build()
+        self._sync_language(False)
         self._apply_preset(self.preset.get(), initial=True)
         for v in (self.from_var, self.to_var, self.mode, self.model, self.key, self.prompt_path, self.folder):
             v.trace_add("write", lambda *_: self.on_change())
         self.preset.trace_add("write", lambda *_: self._apply_preset(self.preset.get()))
-        self._to_tag = langs.resolve(self.to_var.get()).tag  # the target the prompt slot was last aligned to
-        self.prompt_path.trace_add("write", lambda *_: self._remember_prompt())
-        self._remember_prompt()
+        self.prompt_path.trace_add("write", lambda *_: self._sync_language())
         self.source.trace_add("write", lambda *_: self.on_change())
         for v in (self.key, self.model):  # keys and models are written to disk at once, not only on close
             v.trace_add("write", lambda *_: self._schedule_save())
@@ -168,6 +171,7 @@ class App:
         self.to_box = ttk.Combobox(row, textvariable=self.to_var, values=langs.display_list(), width=14)
         self.to_box.bind("<FocusOut>", lambda e: self._normalise_to())
         self.to_box.bind("<<ComboboxSelected>>", lambda e: self._normalise_to())
+        self.to_fixed = ttk.Label(row, text="", style="Dim.TLabel", width=14)  # To, when the prompt decides it
         self.to_note = ttk.Label(row, text="", style="Dim.TLabel")
         self.clear_btn.grid(row=0, column=1, padx=(6, 0))
         self.clear_btn.grid_remove()
@@ -176,11 +180,13 @@ class App:
         self.arrow.grid(row=0, column=4, padx=10)
         self.to_label.grid(row=0, column=5, padx=(0, 6))
         self.to_box.grid(row=0, column=6)
+        self.to_fixed.grid(row=0, column=6)
+        self.to_fixed.grid_remove()
         self.to_note.grid(row=0, column=7, padx=(8, 0))
 
         # mode, preset
         row = ttk.Frame(main)
-        row.grid(row=1, column=0, sticky="ew", pady=(14, 0))
+        row.grid(row=2, column=0, sticky="ew", pady=(14, 0))
         seg = ttk.Frame(row)
         seg.pack(side="left")
         ttk.Radiobutton(seg, text="Bilingual", value="bilingual", variable=self.mode, style="Seg.Toolbutton").pack(side="left")
@@ -190,7 +196,7 @@ class App:
 
         # model, key
         row = ttk.Frame(main)
-        row.grid(row=2, column=0, sticky="ew", pady=(14, 0))
+        row.grid(row=3, column=0, sticky="ew", pady=(14, 0))
         row.columnconfigure(1, weight=1)
         row.columnconfigure(3, weight=1)
         ttk.Label(row, text="Model", style="Dim.TLabel").grid(row=0, column=0, padx=(0, 8))
@@ -206,12 +212,16 @@ class App:
 
         # prompt
         row = ttk.Frame(main)
-        row.grid(row=3, column=0, sticky="ew", pady=(14, 0))
+        row.grid(row=1, column=0, sticky="ew", pady=(14, 0))
         row.columnconfigure(1, weight=1)
         ttk.Label(row, text="Prompt", style="Dim.TLabel").grid(row=0, column=0, padx=(0, 8))
-        self.prompt_btn = ttk.Button(row, text="none", style="Slot.TButton", command=self.open_prompt)
-        self.prompt_btn.grid(row=0, column=1, sticky="ew")
-        ttk.Button(row, text="✕", style="Icon.TButton", width=3, command=lambda: self.prompt_path.set("")).grid(row=0, column=2, padx=(6, 0))
+        self.prompt_var = tk.StringVar(value=DEFAULT_PROMPT)
+        self.prompt_box = ttk.Combobox(row, textvariable=self.prompt_var, state="readonly",
+                                       postcommand=self._fill_prompts)
+        self.prompt_box.grid(row=0, column=1, sticky="ew")
+        self.prompt_box.bind("<<ComboboxSelected>>", lambda e: self._pick_prompt())
+        self.prompt_edit = ttk.Button(row, text="Edit", command=self.open_prompt)
+        self.prompt_edit.grid(row=0, column=2, padx=(6, 0))
         self.prompt_problem = ttk.Label(row, text="", style="Dim.TLabel")
         self.prompt_problem.grid(row=0, column=3, padx=(10, 0))
 
@@ -320,6 +330,7 @@ class App:
             langs.use_table(inv.get("languages"), inv.get("language_aliases"))
             self.to_box.configure(values=langs.display_list())
             self.from_box.configure(values=["Auto"] + langs.display_list())
+            self._sync_language(False)
         self.on_change()
 
     def update_engine(self):
@@ -388,6 +399,72 @@ class App:
         path = filedialog.askdirectory(parent=self.root, initialdir=self.folder.get() or self.settings.get("last_dir") or None)
         if path:
             self.folder.set(path.replace("/", os.sep))
+
+    def _prompt_entries(self):
+        """[(label, kind, item)]: Default (the engine's own prompt), every shipped template, then the user's own prompts."""
+        out = [(DEFAULT_PROMPT, "default", None)]
+        out += [(t["name"], "template", t) for t in promptset.templates()]
+        own = promptset.custom_prompts()
+        if own:
+            out.append((PROMPT_SEPARATOR, "separator", None))
+        taken = {label for label, _, _ in out}
+        for c in own:
+            label = c["name"] + (" (%s)" % c["lang"] if c["lang"] not in (promptset.NEUTRAL, promptset.UNKNOWN) else "")
+            if label in taken:
+                label += " (mine)"
+            taken.add(label)
+            out.append((label, "custom", c))
+        return out
+
+    def _prompt_label(self, path):
+        """What the dropdown shows for the prompt in the slot."""
+        if not path:
+            return DEFAULT_PROMPT
+        key = (path, langs.version, self._stamp(path))
+        if self._label_cache[0] != key:
+            label = Path(path).stem
+            for text, kind, item in self._prompt_entries():
+                if kind == "custom" and item["path"] == path:
+                    label = text
+                    break
+                if kind == "template" and promptset.safe_name(item["name"]) == Path(path).stem and not promptset.is_custom(path):
+                    label = text
+                    break
+            self._label_cache = (key, label)
+        return self._label_cache[1]
+
+    @staticmethod
+    def _stamp(path):
+        p = Path(path)
+        side = promptset.prompts_dir() / (p.stem + ".src.json")
+        try:
+            return (p.stat().st_mtime_ns, side.stat().st_mtime_ns if side.is_file() else 0)
+        except OSError:
+            return (0, 0)
+
+    def _fill_prompts(self):
+        self.prompt_box.configure(values=[label for label, _, _ in self._prompt_entries()])
+
+    def _pick_prompt(self):
+        """A prompt was picked in the dropdown: it becomes the slot's prompt; one written for another language moves
+        the To box to that language."""
+        label = self.prompt_var.get()
+        entry = next((e for e in self._prompt_entries() if e[0] == label), None)
+        if entry is None or entry[1] == "separator" or self._busy_with_job():
+            self.prompt_var.set(self._prompt_label(self.prompt_path.get()))
+            return
+        _, kind, item = entry
+        if kind == "default":
+            self.prompt_path.set("")
+            self._refresh()
+            return
+        try:
+            path = promptset.ensure_template(item) if kind == "template" else item["path"]
+        except (OSError, ValueError):
+            self.prompt_var.set(self._prompt_label(self.prompt_path.get()))
+            return
+        self.prompt_path.set(path)
+        self._refresh()
 
     def open_prompt(self):
         if self.prompt_win is not None and self.prompt_win.winfo_exists():
@@ -666,59 +743,39 @@ class App:
         self._refresh()
 
     def _normalise_to(self):
-        """Commit the To box: show the display name of the typed language (ru -> Russian; unknown text stays as it is)
-        and let the Prompt slot follow the language."""
+        """Commit the To box: show the display name of the typed language (ru -> Russian; unknown text stays as it is)."""
         lang = langs.resolve(self.to_var.get())
         if lang.known and lang.name != self.to_var.get():
             self.to_var.set(lang.name)
-        self._align_prompt(lang)
-        if self.prompt_win is not None and self.prompt_win.winfo_exists():
-            self.prompt_win.on_target_changed()
 
-    def _remember_prompt(self):
-        """Each language keeps its own prompt: remember the file of the slot under the language it is written for."""
+    def _fixed_language(self):
+        """The language the chosen prompt is written for (a Lang), or None for Default and for a prompt that uses
+        {language} or has no known language: then the user sets To himself."""
         path = self.prompt_path.get()
         if not path or not Path(path).is_file():
-            return
-        lang = promptset.lang_of(path)
-        if lang == promptset.UNKNOWN:
-            return
-        memory = self.settings.setdefault("prompt_by_lang", {})
-        if memory.get(lang) != path:
-            memory[lang] = path
-            self._schedule_save()
+            return None
+        tag = promptset.lang_of(path)
+        if tag in ("", promptset.NEUTRAL, promptset.UNKNOWN):
+            return None
+        lang = langs.resolve(tag)
+        return lang if lang.known else None
 
-    def _align_prompt(self, lang):
-        """When the target language changes, the Prompt slot takes the prompt of that language (the remembered one, else
-        the shipped template, else the neutral prompt). A prompt of unknown language is only replaced when it clearly
-        does not fit."""
-        if not lang or lang.tag == self._to_tag:
-            return
-        self._to_tag = lang.tag
-        path = self.prompt_path.get()
-        if not path:
-            return
-        have = promptset.lang_of(path)
-        if have == "?":
-            try:
-                if not prompts.check_language(have, lang, prompts.load(path)):
-                    return
-            except (OSError, ValueError):
-                return
-        elif have == lang.tag:
-            return
-        try:
-            new = promptset.select_for(lang.tag, self.settings.get("prompt_by_lang"))
-        except (OSError, ValueError, StopIteration):
-            return
-        if new != path:
-            self.prompt_path.set(new)
-            self._flash(self.prompt_btn, "Slot.TButton")
+    def _sync_language(self, flash=True):
+        """Choosing a prompt written for one language sets To to it (nothing changes under a run, a wait or a hop)."""
+        lang = self._fixed_language()
+        if lang and not self._busy_with_job() and langs.resolve(self.to_var.get()).tag != lang.tag:
+            self.to_var.set(lang.name)
+            if flash:
+                self._flash(self.to_label, "Dim.TLabel", hot="Accent.TLabel")
 
-    def _flash(self, widget, normal, ms=700):
+    def _flash(self, widget, normal, ms=700, hot="SlotNeed.TButton"):
         """A short accent flash on a slot: it changed by itself."""
-        widget.configure(style="SlotNeed.TButton")
+        widget.configure(style=hot)
         self.root.after(ms, lambda: widget.winfo_exists() and widget.configure(style=normal))
+
+    def _busy_with_job(self):
+        """A process runs, or the app is between two segments of one run (a wait or the gap after a hop)."""
+        return bool(self.runner.running or self.waiting or self._switching)
 
     def _lang_problems(self):
         """Blocking problems with the From/To pair: 'to' (empty) and 'same' (From = To)."""
@@ -735,7 +792,6 @@ class App:
             try:
                 data = prompts.load(path)
                 out = prompts.check(data)
-                out += prompts.check_language(promptset.lang_of(path), langs.resolve(self.to_var.get()), data)
             except (OSError, ValueError):
                 out = ["user"]
         return out
@@ -762,7 +818,19 @@ class App:
         for w in (self.from_label, self.from_box):
             (w.grid if show_from else w.grid_remove)()
         pp = self.prompt_path.get()
-        self.prompt_btn.configure(text=Path(pp).name if pp else "none")
+        self.prompt_var.set(self._prompt_label(pp))
+        fixed = self._fixed_language()
+        if fixed:
+            self.to_box.grid_remove()
+            self.to_fixed.configure(text=fixed.name)
+            self.to_fixed.grid()
+        else:
+            self.to_fixed.grid_remove()
+            self.to_box.grid()
+        busy = "disabled" if self._busy_with_job() else "normal"
+        self.to_box.configure(state=busy)
+        self.prompt_box.configure(state="disabled" if busy == "disabled" else "readonly")
+        self.prompt_edit.configure(state=busy)
         models = self.model_list()
         if self.runner.running and self.cur_pair and self.cur_pair[1]:
             mtext = self.cur_pair[1]
@@ -797,10 +865,7 @@ class App:
         else:
             self.to_note.configure(text="No tag" if lang and not lang.known else "", style="Dim.TLabel")
         names = {"user": "?", "text": "{text}", "braces": "{ }"}
-        if "lang" in problems:  # the language the prompt is written for
-            names["lang"] = langs.resolve(promptset.lang_of(self.prompt_path.get())).name or "?"
-        self.prompt_problem.configure(text="  ".join(names[p] for p in problems),
-                                      style="Accent.TLabel" if "lang" in problems else "Dim.TLabel")
+        self.prompt_problem.configure(text="  ".join(names[p] for p in problems), style="Dim.TLabel")
         self.folder_btn.configure(text=self.folder.get() or "beside the book")
 
         env, line = self.command_text()
@@ -935,6 +1000,9 @@ class App:
             return
         if not auto:
             self.idle_segments = 0
+            self._run_job = str(job.dir)
+        elif not self._may_continue(job):
+            return
         self.waiting = False
         pool = self.pool()
         keys = pool.keys
@@ -1044,6 +1112,23 @@ class App:
         if runner.FAILED.search(text) or runner.FATAL.search(text):
             tag = "strong"
         self.log_append(text[:LINE_CUT] + (" …" if len(text) > LINE_CUT else ""), tag)
+
+    def _may_continue(self, job):
+        """The app goes on by itself after a hop or a wait only with what a manual Run needs: the same job, a prompt
+        that fits the language and a valid pair of languages. Otherwise it stays stopped with a visible chip."""
+        why = ""
+        if str(job.dir) != self._run_job:
+            why = "Job"
+        elif self._problems() or self._lang_problems():
+            why = "Prompt"
+        if not why:
+            return True
+        self.waiting = self._switching = False
+        self.state = "stopped"
+        self.log_append("Not continued: the %s changed while the run was paused" % why.lower(), "strong")
+        self._set_chip(why, "accent")
+        self._refresh()
+        return False
 
     def _update_count(self):
         m = self.monitor

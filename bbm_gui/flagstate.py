@@ -63,6 +63,17 @@ class FlagState:
         """Back to the preset value (or to nothing for a pure user flag)."""
         self.user.pop(fid, None)
 
+    def differs(self):
+        """True when a preset flag is switched off or changed by the user."""
+        return any(fid in self.user for fid in self.preset_flags())
+
+    def reset_preset(self):
+        """Bring every preset flag back to its preset value; flags the user added on top stay. True when changed."""
+        gone = [fid for fid in self.preset_flags() if fid in self.user]
+        for fid in gone:
+            del self.user[fid]
+        return bool(gone)
+
     # ------------------------------------------------------------------ persistence
     def to_json(self):
         return {fid: val for fid, val in self.user.items() if not flagrules.is_transient(fid)}

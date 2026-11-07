@@ -1,6 +1,7 @@
 """Prompt window: the template text on the left, the glossary on the right. Saving builds the prompt file the
 engine reads."""
 import tkinter as tk
+from pathlib import Path
 from tkinter import filedialog, ttk
 
 from . import glossary as gl
@@ -48,15 +49,6 @@ class PromptWindow(tk.Toplevel):
         ttk.Label(top, text="Name", style="Dim.TLabel").pack(side="left", padx=(0, 8))
         self.name_var = tk.StringVar()
         ttk.Entry(top, textvariable=self.name_var, width=22).pack(side="left")
-        ttk.Label(top, text="Language", style="Dim.TLabel").pack(side="left", padx=(18, 8))
-        self.lang_label = ttk.Label(top, text=self.target.name or "-")
-        self.lang_label.pack(side="left")
-        ttk.Label(top, text="Template", style="Dim.TLabel").pack(side="left", padx=(18, 8))
-        self.tpl_var = tk.StringVar()
-        self.tpl_box = ttk.Combobox(top, textvariable=self.tpl_var, state="readonly", width=22)
-        self.tpl_box.pack(side="left")
-        self.tpl_box.bind("<<ComboboxSelected>>", lambda e: self._apply_template())
-        self._fill_templates()
         self.mark = SaveMark(top)
         self.mark.pack(side="right")
         ttk.Button(top, text="Save", command=self.save).pack(side="right", padx=(0, 10))
@@ -144,21 +136,6 @@ class PromptWindow(tk.Toplevel):
         t.pack(side="left", fill="both", expand=True)
         return t
 
-    def _fill_templates(self):
-        """Only templates written for the target language, plus the neutral one."""
-        self.tpl_box.configure(values=[t["name"] for t in promptset.templates_for(self.target.tag)])
-
-    def on_target_changed(self):
-        """The To box of the main window changed: follow it (label, template list, and the prompt the slot switched to)."""
-        self.target = langs.resolve(self.app.to_var.get())
-        self.lang_label.configure(text=self.target.name or "-")
-        self._fill_templates()
-        path = self.app.prompt_path.get()
-        if path and not self.dirty and path != getattr(self, "_path", None):
-            self._open(path)
-        else:
-            self._check()
-
     # ------------------------------------------------------------------ load / save
     @staticmethod
     def _blank():
@@ -196,12 +173,14 @@ class PromptWindow(tk.Toplevel):
 
     def _pull(self):
         s = self.set
+        self.target = langs.resolve(self.app.to_var.get())
         s.name = self.name_var.get().strip() or "prompt"
         s.system = self.system.get("1.0", "end-1c")
         s.user = self.user.get("1.0", "end-1c")
+        # the prompt's language: {language} -> Any; else the template/prompt it came from; else the To language
         if "{language}" in s.system or "{language}" in s.user:
             s.lang = promptset.NEUTRAL
-        elif not s.lang:  # a new prompt is written for the target language it is saved under
+        elif s.lang in ("", promptset.NEUTRAL):
             s.lang = self.target.tag or promptset.detect_lang(s.system, s.user)
         if s.lang not in (promptset.NEUTRAL, promptset.UNKNOWN):  # the glossary follows the prompt, not the To box
             s.language = langs.resolve(s.lang).name or s.language
@@ -217,42 +196,45 @@ class PromptWindow(tk.Toplevel):
     def save(self):
         self._end_edit(commit=True)
         try:
-            built = self._pull().save()
+            ps = self._pull()
+            requested = promptset.safe_name(ps.name)
+            ps.name = self._free_save_name(requested)
+            built = ps.save()
         except OSError:
             self.mark.set("failed")
             return
+        self.name_var.set(self.set.name)
         self._path = str(built)
         self.app.prompt_path.set(str(built))
         self.app.on_change()
         self.mark.set("saved")
+        if self.set.name != requested:  # the name was taken by a prompt that is not the one open here
+            self.mark.configure(text="Saved as " + self.set.name)
         self.dirty = False
 
-    def _apply_template(self):
-        for t in promptset.templates():
-            if t["name"] == self.tpl_var.get():
-                self.system.delete("1.0", "end")
-                self.system.insert("1.0", t["system"])
-                self.user.delete("1.0", "end")
-                self.user.insert("1.0", t["user"])
-                self.set.head, self.set.hint = t["head"], t["hint"]  # the glossary block follows the template's language
-                self.set.lang = t["tag"]
-                if t["language"]:
-                    self.set.language = t["language"]
-                self._check()
-                self._refresh()
-                self._dirty()
-                return
+    def _taken(self, name):
+        pdir, gdir = promptset.prompts_dir(), promptset.glossaries_dir()
+        return any(f.exists() for f in (pdir / (name + ".json"), pdir / (name + ".src.json"), gdir / (name + ".json")))
+
+    def _free_save_name(self, name):
+        """The name to save under: the one asked for when it is free or is the prompt open in this window, else the
+        first free 'name 2', 'name 3'... so a prompt and glossary of the same name that was not opened here is never
+        overwritten."""
+        opened = getattr(self, "_path", None)
+        if opened and Path(opened).parent == promptset.prompts_dir() and Path(opened).stem == name:
+            return name
+        base, n = name, 1
+        while self._taken(name):
+            n += 1
+            name = promptset.safe_name("%s %d" % (base, n))
+        return name
 
     def _check(self):
         system, user = self.system.get("1.0", "end-1c"), self.user.get("1.0", "end-1c")
         probs = prompts.check({"user": user})
-        lang = promptset.NEUTRAL if "{language}" in system + user else self.set.lang
-        probs += prompts.check_language(lang, self.target, {"system": system, "user": user})
         if gl.check_system(system):
             probs.append("sysbraces")
-        shown = lang if lang not in ("", promptset.UNKNOWN) else promptset.script_lang(system + " " + user)
-        names = {"user": "empty", "text": "{text}", "braces": "{ }", "lang": langs.resolve(shown).name or "?",
-                 "sysbraces": "{ } system"}
+        names = {"user": "empty", "text": "{text}", "braces": "{ }", "sysbraces": "{ } system"}
         self.problem.configure(text="  ".join(names[p] for p in probs))
 
     def _modified(self, event):

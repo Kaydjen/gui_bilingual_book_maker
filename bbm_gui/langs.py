@@ -16,6 +16,7 @@ FAVOURITES = ["Russian", "Polish", "English", "Ukrainian", "German", "French", "
 
 _table = dict(FALLBACK)
 _aliases = {}
+version = 0  # bumped whenever the table is replaced, so results derived from it can be cached safely
 
 
 @dataclass(frozen=True)
@@ -34,7 +35,8 @@ def display(name):
 
 def use_table(languages, aliases=None):
     """Take the engine's {tag: name} table (and {name: tag} aliases); an empty one keeps the built-in list."""
-    global _table, _aliases
+    global _table, _aliases, version
+    version += 1
     if isinstance(languages, dict) and languages:
         _table = {str(k).lower(): str(v).lower() for k, v in languages.items()}
         _aliases = {str(k).lower(): str(v).lower() for k, v in (aliases or {}).items() if isinstance(aliases, dict)}

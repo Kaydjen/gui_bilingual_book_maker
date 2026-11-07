@@ -15,13 +15,13 @@ class StartupTest(unittest.TestCase):
         os.environ.pop("BBM_GUI_DATA", None)
         self._tmp.cleanup()
 
-    def test_saved_known_language_prompt_without_memory(self):
-        """A saved prompt that is a shipped template, with no prompt_by_lang, must not break the start."""
+    def test_saved_prompt_language_sets_to(self):
+        """A saved prompt that is a shipped template decides To at the start."""
         from bbm_gui import app as appmod, promptset
         template = next(t for t in promptset.templates() if t["tag"] == "ru")
         path = promptset.ensure_template(template)
         (Path(self._tmp.name) / "settings.json").write_text(
-            json.dumps({"prompt": path, "to": "Russian"}), encoding="utf-8")
+            json.dumps({"prompt": path, "to": "Polish"}), encoding="utf-8")
         try:
             root = tk.Tk()
         except tk.TclError:
@@ -29,7 +29,7 @@ class StartupTest(unittest.TestCase):
         root.withdraw()
         try:
             a = appmod.App(root)
-            self.assertEqual(a.settings["prompt_by_lang"].get("ru"), path)
+            self.assertEqual(a.to_var.get(), "Russian")
             root.update()
             a.root.after_cancel(a._save_job) if a._save_job else None
         finally:

@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 from . import glossary as gl
+from . import langs
 from .settings import data_dir
 
 TEMPLATES = Path(__file__).resolve().parent / "templates"
@@ -76,6 +77,8 @@ LEGACY = {
 
 
 NEUTRAL, UNKNOWN = "*", "?"  # prompt language: works for any target (uses {language}) / not known
+
+
 _UK, _RU, _PL = re.compile("[іїєґІЇЄҐ]"), re.compile("[ёъыэЁЪЫЭ]"), re.compile("[ąęłńśźżĄĘŁŃŚŹŻ]")
 
 
@@ -99,37 +102,88 @@ def detect_lang(system, user=""):
     return script_lang(system + " " + user)
 
 
+def norm_lang(value):
+    """A recorded prompt language -> '*' (Any), a lower-case engine tag, or '?'. A language name or `tag:Name` is
+    turned into its tag; text the engine's table does not know becomes '?' (never an error)."""
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    v = value.strip()
+    if v in (NEUTRAL, UNKNOWN):
+        return v
+    if v.lower() == "any":
+        return NEUTRAL
+    r = langs.resolve(v)
+    return r.tag if r.known and r.tag else UNKNOWN
+
+
 _lang_cache = {}
 
 
-def lang_of(path):
-    """Language of a prompt file: the recorded one for a prompt of ours, else detected from its text."""
+def info_of(path):
+    """(language, explicit) of a prompt file. Language: the recorded one for a prompt of ours, else detected from its
+    text. explicit: the user chose the language himself (then the letters of the text are never second-guessed)."""
     p = Path(path)
     try:
-        key = (str(p), p.stat().st_mtime_ns)
+        key = (str(p), p.stat().st_mtime_ns, langs.version)
     except OSError:
-        return UNKNOWN
+        return UNKNOWN, False
     if key in _lang_cache:
         return _lang_cache[key]
     side = prompts_dir() / (p.stem + ".src.json")
-    lang = UNKNOWN
+    out = (UNKNOWN, False)
     try:
         if p.parent == prompts_dir() and side.is_file():
             d = json.loads(side.read_text(encoding="utf-8"))
             tpl = d.get("template", {})
-            lang = d.get("lang") or detect_lang(tpl.get("system", ""), tpl.get("user", ""))
+            lang = norm_lang(d.get("lang")) or detect_lang(tpl.get("system", ""), tpl.get("user", ""))
+            out = (lang, bool(d.get("lang_set")))
         else:
             d = json.loads(p.read_text(encoding="utf-8-sig"))
-            lang = detect_lang(d.get("system", ""), d.get("user", "")) if isinstance(d, dict) else UNKNOWN
+            out = (detect_lang(d.get("system", ""), d.get("user", "")) if isinstance(d, dict) else UNKNOWN, False)
     except (OSError, ValueError, AttributeError):
         pass
-    _lang_cache[key] = lang
-    return lang
+    _lang_cache[key] = out
+    return out
 
 
-def templates_for(tag):
-    """Shipped templates that fit a target language: its own and the neutral one."""
-    return [t for t in templates() if t["tag"] in (tag, NEUTRAL)]
+def lang_of(path):
+    """Language of a prompt file (see info_of)."""
+    return info_of(path)[0]
+
+
+def _shipped(system):
+    """True when `system` is the text of a shipped template (current or an old shipped version)."""
+    if hashlib.sha256(system.encode("utf-8")).hexdigest() in LEGACY:
+        return True
+    return any(t["system"] == system for t in templates())
+
+
+def custom_prompts():
+    """The user's own saved prompts: [dict(id, name, path, lang, explicit)], newest first. A prompt built from a
+    shipped template (its text unchanged) is not custom; an edited one is."""
+    out = []
+    for side in prompts_dir().glob("*.src.json"):
+        stem = side.name[:-len(".src.json")]
+        built = prompts_dir() / (stem + ".json")
+        try:
+            d = json.loads(side.read_text(encoding="utf-8"))
+            tpl = d.get("template", {})
+            if not built.is_file() or _shipped(tpl.get("system", "")):
+                continue
+            lang = norm_lang(d.get("lang")) or detect_lang(tpl.get("system", ""), tpl.get("user", ""))
+            out.append((side.stat().st_mtime_ns, {"id": stem, "name": stem, "path": str(built), "lang": lang,
+                                                   "explicit": bool(d.get("lang_set"))}))
+        except (OSError, ValueError, AttributeError):
+            continue
+    return [c for _, c in sorted(out, key=lambda x: x[0], reverse=True)]
+
+
+def is_custom(path):
+    """True for a prompt that is not a shipped template build: the user's own saved prompt or any file picked by hand."""
+    p = Path(path)
+    if p.parent != prompts_dir():
+        return True
+    return any(c["path"] == str(p) for c in custom_prompts())
 
 
 def ensure_template(t):
@@ -143,24 +197,6 @@ def ensure_template(t):
         name = safe_name("%s %s" % (t["name"], t["tag"]))
     ps = PromptSet(name, t["system"], t["user"], [], t["language"], True, t["head"], t["hint"], t["tag"])
     return str(ps.save())
-
-
-def select_for(tag, remembered):
-    """The prompt file for a target language: the one remembered for it, else the shipped template of that language,
-    else the remembered neutral prompt, else the shipped neutral template."""
-    def usable(path, want):
-        return bool(path) and Path(path).is_file() and lang_of(path) == want
-
-    remembered = remembered or {}
-    if tag:
-        if usable(remembered.get(tag), tag):
-            return remembered[tag]
-        for t in templates():
-            if t["tag"] == tag:
-                return ensure_template(t)
-    if usable(remembered.get(NEUTRAL), NEUTRAL):
-        return remembered[NEUTRAL]
-    return ensure_template(next(t for t in templates() if t["tag"] == NEUTRAL))
 
 
 def _migrate(system):
@@ -186,6 +222,7 @@ class PromptSet:
         self.head = head
         self.hint = hint
         self.lang = lang  # '' = not decided yet (a new prompt), see detect_lang for the other values
+        self.lang_set = False  # the user chose the language himself
 
     @property
     def built_path(self):
@@ -211,9 +248,11 @@ class PromptSet:
                 moved = _migrate(system)
                 if moved:
                     system, head, hint = moved
-            lang = d.get("lang") or detect_lang(tpl.get("system", ""), tpl.get("user", ""))
-            return cls(p.stem, system, tpl.get("user", "{text}"), entries, language, d.get("notes", True), head, hint,
-                       lang)
+            lang = norm_lang(d.get("lang")) or detect_lang(tpl.get("system", ""), tpl.get("user", ""))
+            ps = cls(p.stem, system, tpl.get("user", "{text}"), entries, language, d.get("notes", True), head, hint,
+                     lang)
+            ps.lang_set = bool(d.get("lang_set"))
+            return ps
         data = json.loads(p.read_text(encoding="utf-8-sig"))
         if not isinstance(data, dict):
             raise ValueError("not an object")
@@ -233,6 +272,8 @@ class PromptSet:
             tpl["glossary_notes_hint"] = self.hint
         side = {"format": 1, "template": tpl, "glossary": name, "notes": self.notes,
                 "lang": self.lang or detect_lang(self.system, self.user)}
+        if self.lang_set:
+            side["lang_set"] = True
         _write(prompts_dir() / (name + ".src.json"), json.dumps(side, ensure_ascii=False, indent=1) + "\n")
         built = gl.build_prompt(tpl, self.entries, self.notes)
         _write(self.built_path, json.dumps(built, ensure_ascii=False, indent=2))

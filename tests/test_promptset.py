@@ -124,7 +124,7 @@ class LangTest(unittest.TestCase):
             tag = next(t["tag"] for t in ps.templates() if t["id"] == tid)
             self.assertIn(tag, ("ru", "uk", "pl", "*"))
         self.assertEqual(ps.detect_lang("Translate to {language}.", "{text}"), "*")
-        self.assertEqual(ps.detect_lang("Ты переводчик, не меняй э и ы", "{text}"), "ru")
+        self.assertEqual(ps.detect_lang("Ты переводчик, не меняй э и ы, это его ещё", "{text}"), "ru")
         self.assertEqual(ps.detect_lang("Ти перекладач, їжак і ґанок", "{text}"), "uk")
         self.assertEqual(ps.detect_lang("Jesteś tłumaczem, zażółć", "{text}"), "pl")
         self.assertEqual(ps.detect_lang("Eres traductor, ¿qué más? ó", "{text}"), "?")
@@ -144,45 +144,107 @@ class LangTest(unittest.TestCase):
         self.assertEqual(ps.PromptSet.open(path).lang, "uk")
         self.assertEqual(ps.lang_of(path), "uk")
         plain = Path(self._tmp.name) / "plain.json"  # a prompt file that is not ours
-        plain.write_text(json.dumps({"system": "Ти перекладач їжак", "user": "{text}"}), encoding="utf-8")
+        plain.write_text(json.dumps({"system": "Ти професійний перекладач, що знає їжака та ґанок", "user": "{text}"}), encoding="utf-8")
         self.assertEqual(ps.lang_of(plain), "uk")
 
     def test_language_placeholder_makes_it_neutral(self):
         s = ps.PromptSet("n", "Translate into {language}", "{text}", [], "", True, "", "", "ru")
         self.assertEqual(ps.detect_lang(s.system, s.user), "*")
 
-    def test_select_for_chain(self):
-        remembered = {}
-        ru = ps.select_for("ru", remembered)  # shipped template, created on the fly
-        self.assertTrue(Path(ru).is_file())
-        self.assertEqual(ps.lang_of(ru), "ru")
-        self.assertEqual(ps.select_for("ru", {}), ru)  # reused, not duplicated
-        uk = ps.select_for("uk", remembered)
-        self.assertNotEqual(uk, ru)
-        self.assertEqual(ps.lang_of(uk), "uk")
-        de = ps.select_for("de", remembered)  # no template: neutral
-        self.assertEqual(ps.lang_of(de), "*")
-        self.assertEqual(ps.select_for(None, remembered), de)
-        mine = ps.PromptSet("mine", "Ты переводчик ы", "{text}", [], "Russian", True, "", "", "ru").save()
-        remembered["ru"] = str(mine)
-        self.assertEqual(ps.select_for("ru", remembered), str(mine))  # the remembered one wins
-        remembered["ru"] = str(uk)  # a remembered file of another language is ignored
-        self.assertEqual(ps.select_for("ru", remembered), ru)
-        remembered["ru"] = str(Path(self._tmp.name) / "gone.json")
-        self.assertEqual(ps.select_for("ru", remembered), ru)
-
     def test_existing_file_with_a_template_name_is_not_overwritten(self):
         t = self.tpl("ru")
         other = ps.PromptSet(ps.safe_name(t["name"]), "Something else", "{text}", [], "", True, "", "", "?")
         other.save()
-        path = ps.select_for("ru", {})
+        path = ps.ensure_template(t)
         self.assertNotEqual(Path(path).stem, ps.safe_name(t["name"]))
         self.assertIn("Something else", other.built_path.read_text(encoding="utf-8"))
 
-    def test_templates_for(self):
-        self.assertEqual(sorted(t["tag"] for t in ps.templates_for("ru")), ["*", "ru"])
-        self.assertEqual([t["tag"] for t in ps.templates_for(None)], ["*"])
-        self.assertEqual([t["tag"] for t in ps.templates_for("de")], ["*"])
+class CustomPromptTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        os.environ["BBM_GUI_DATA"] = self._tmp.name
+        ps._lang_cache.clear()
+
+    def tearDown(self):
+        os.environ.pop("BBM_GUI_DATA", None)
+        self._tmp.cleanup()
+
+    def save(self, name, system, lang="", lang_set=False, user="{text}"):
+        s = ps.PromptSet(name, system, user, [], "", True, "", "", lang)
+        s.lang_set = lang_set
+        return str(s.save())
+
+    def test_norm_lang(self):
+        self.assertEqual(ps.norm_lang("Czech"), "cs")
+        self.assertEqual(ps.norm_lang("cs"), "cs")
+        self.assertEqual(ps.norm_lang("tlh:Klingon"), "tlh")  # TAG:NAME is accepted as it is
+        self.assertEqual(ps.norm_lang("Any"), "*")
+        self.assertEqual(ps.norm_lang("*"), "*")
+        self.assertEqual(ps.norm_lang("Klingon"), "?")  # unknown: no crash, no language
+        self.assertEqual(ps.norm_lang(""), "")
+        self.assertEqual(ps.norm_lang(None), "")
+        self.assertEqual(ps.norm_lang(5), "")
+
+    def test_explicit_language_is_saved_and_read(self):
+        path = self.save("cz", "Preloz do cestiny", "cs", True)
+        side = json.loads((ps.prompts_dir() / "cz.src.json").read_text(encoding="utf-8"))
+        self.assertEqual((side["lang"], side["lang_set"]), ("cs", True))
+        self.assertEqual(ps.info_of(path), ("cs", True))
+        again = ps.PromptSet.open(path)
+        self.assertEqual((again.lang, again.lang_set), ("cs", True))
+        auto = self.save("auto", "Translate it", "*", False)
+        self.assertNotIn("lang_set", json.loads((ps.prompts_dir() / "auto.src.json").read_text(encoding="utf-8")))
+        self.assertEqual(ps.info_of(auto), ("*", False))
+        self.assertFalse(ps.PromptSet.open(auto).lang_set)
+
+    def test_side_file_with_a_language_name_or_garbage(self):
+        path = self.save("named", "x", "cs", True)
+        side = ps.prompts_dir() / "named.src.json"
+        d = json.loads(side.read_text(encoding="utf-8"))
+        # a name becomes its tag; an unknown name, a number or nothing leaves the language to detection (plain English: '?')
+        for raw, want in (("Czech", "cs"), ("Klingon", "?"), (7, "?"), ("", "?")):
+            d["lang"] = raw
+            side.write_text(json.dumps(d), encoding="utf-8")
+            ps._lang_cache.clear()
+            self.assertEqual(ps.info_of(path)[0], want, raw)
+            self.assertEqual(ps.PromptSet.open(path).lang, want, raw)  # must not raise
+
+    def test_custom_listing(self):
+        ps.ensure_template(next(t for t in ps.templates() if t["tag"] == "ru"))  # a shipped build is not custom
+        self.assertEqual(ps.custom_prompts(), [])
+        cz = self.save("cz", "Preloz", "cs", True)
+        anyp = self.save("anyp", "Translate to {language}", "*")
+        edited = next(t for t in ps.templates() if t["tag"] == "ru")
+        mine = self.save("ru edit", edited["system"] + "\nextra rule", "ru")  # an edited shipped text is custom
+        got = {c["name"]: c for c in ps.custom_prompts()}
+        self.assertEqual(set(got), {"cz", "anyp", "ru_edit"})
+        self.assertEqual((got["cz"]["lang"], got["cz"]["explicit"], got["cz"]["path"]), ("cs", True, cz))
+        self.assertEqual(got["anyp"]["lang"], "*")
+        self.assertEqual(got["ru_edit"]["path"], mine)
+        self.assertTrue(ps.is_custom(cz))
+        self.assertTrue(ps.is_custom(str(Path(self._tmp.name) / "elsewhere.json")))  # a file picked by hand
+        self.assertFalse(ps.is_custom(ps.ensure_template(next(t for t in ps.templates() if t["tag"] == "uk"))))
+        (ps.prompts_dir() / "anyp.json").unlink()  # a side file without its built prompt is not offered
+        self.assertNotIn("anyp", [c["name"] for c in ps.custom_prompts()])
+        (ps.prompts_dir() / "cz.src.json").write_text("{broken", encoding="utf-8")  # nor a damaged one
+        self.assertNotIn("cz", [c["name"] for c in ps.custom_prompts()])
+
+    def test_plain_file_language_is_detected_not_explicit(self):
+        plain = Path(self._tmp.name) / "plain.json"
+        plain.write_text(json.dumps({"system": "Ти професійний перекладач, що знає їжака та ґанок", "user": "{text}"}), encoding="utf-8")
+        self.assertEqual(ps.info_of(plain), ("uk", False))
+        s = ps.PromptSet.open(plain)
+        self.assertEqual((s.lang, s.lang_set), ("uk", False))
+
+    def test_cache_follows_the_language_table(self):
+        from bbm_gui import langs
+        path = self.save("x", "plain", "tlh:Klingon", True)  # a tag outside the built-in table is kept as written
+        self.assertEqual(ps.lang_of(path), "tlh")
+        try:
+            langs.use_table({"xx": "xxish"})
+            self.assertEqual(ps.lang_of(path), "tlh")  # TAG:NAME still resolves by itself
+        finally:
+            langs.use_table(None)
 
 
 if __name__ == "__main__":
