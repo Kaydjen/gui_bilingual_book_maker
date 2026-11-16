@@ -122,6 +122,10 @@ class Worker:
         except Exception:
             self._closed = True
 
+    @property
+    def lane_names(self) -> list:
+        return list(self._lanes)
+
     def idle(self) -> bool:
         """True when no task is waiting or running and every callback has been delivered."""
         return not self._handlers

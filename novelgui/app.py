@@ -5,9 +5,13 @@ from __future__ import annotations
 import tkinter as tk
 from pathlib import Path
 
+from . import busy
 from . import chapterlogic as cl
+from . import libraryrules as rules
 from . import model, platform, selection
 from .books_view import BooksStep
+from .dialog import confirm, message
+from .loadline import LoadLine
 from .settings import Settings, api_base
 from .step import Step
 from .keystore import KeyStore, PromptStore
@@ -83,6 +87,7 @@ class App:
         self.prompts = PromptStore(self.settings.folder)
         self.closing = False
         self.panel = None
+        self.busy_ops: dict = {}    # (series path, volume or None) -> how many operations run on it now
 
         ls = self.fonts.ls
         pad_x, pad_y = int(ls * 1.1), int(ls * 0.9)
@@ -98,6 +103,8 @@ class App:
         self.summary = tk.Label(head, text="", bg=BG, fg=DIM, font=ui.font, anchor="e")
         self.summary.pack(side="right")
         attach_tip(self.summary, ui.tip, lambda e: self._summary_tip())
+        self.loadline = LoadLine(outer)
+        self.loadline.pack(fill="x", pady=(0, int(ls * 0.4)))
         self.host = tk.Frame(outer, bg=BG)
         self.host.pack(fill="both", expand=True)
 
@@ -188,6 +195,128 @@ class App:
         self.library = Path(path)
         self.settings.set("library", str(path))
         self.set_series(None)
+
+    # ------------------------------------------------------------- the library folder (2.2, 2.3, 13.7)
+    def use_library_folder(self, path) -> bool:
+        """Take a folder as the library by the rules of 2.2. A folder that cannot be written is refused with
+        a message and the library stays as it was. Returns True when the library is now that folder."""
+        path = Path(str(path)).expanduser()
+        scan = rules.scan_folder(path)
+        if scan.kind == "invalid":
+            message(self.ui, "%s cannot be the library: it is a file or cannot be read. The library was not "
+                    "changed." % path)
+            return False
+        _created, problem = rules.prepare_library(scan.library)
+        if problem:
+            message(self.ui, "The folder %s cannot be used as the library: %s. The library was not changed."
+                    % (scan.library, problem))
+            return False
+        self.set_library(scan.library)
+        books = self.steps.get("books")
+        if scan.series is not None:
+            self.settings.set("series", str(scan.series))
+        if books is not None:
+            books.library_changed(str(scan.series) if scan.series is not None else None)
+        if self.current != "books":
+            self.show_step("books")
+        if scan.kind == "epubs" and books is not None:
+            n = len(scan.epubs)
+            confirm(self.ui, "This folder holds %d EPUB file%s. Add %s as books?" % (n, "" if n == 1 else "s",
+                                                                                       "it" if n == 1 else "them"),
+                    "Add", lambda: books.add_files(scan.epubs), no="Not now")
+        return True
+
+    def library_block_reason(self) -> str:
+        """Why the library cannot be changed now ("" when it can): a translation runs or waits."""
+        books = self.steps.get("books")
+        views = []
+        for s in (books.series_list if books is not None else []):
+            if not s.broken:
+                try:
+                    views.append(model.job_view(s.path))
+                except Exception:
+                    pass
+        return busy.library_change_reason(views)
+
+    def queue_items(self) -> list:
+        """The queued translations. Hook: the queue is built in a later step; changing the library clears it."""
+        return []
+
+    def clear_queue(self) -> None:
+        """Hook for the queue of a later step."""
+
+    def change_library(self, on_done=None) -> bool:
+        """The settings `Change`: choose a folder and use it. Disabled while a translation runs or waits; with
+        queued items it asks first, since the queue is cleared (13.7)."""
+        reason = self.library_block_reason()
+        if reason:
+            message(self.ui, reason)
+            return False
+        path = self.ui.dialogs.choose_folder(rules.chooser_start(self.library, Path.home()))
+        if not path:
+            return False
+
+        def go():
+            self.clear_queue()
+            if self.use_library_folder(path) and on_done:
+                on_done()
+        n = len(self.queue_items())
+        if n:
+            confirm(self.ui, "The queue holds %d item%s. Changing the library clears it." % (n, "" if n == 1 else "s"),
+                    "Change", go)
+        else:
+            go()
+        return True
+
+    # ------------------------------------------------------------- what is going on with a series (4.4, 13.6)
+    def op_begin(self, series_path: str, volume=None) -> None:
+        k = (series_path, volume)
+        self.busy_ops[k] = self.busy_ops.get(k, 0) + 1
+
+    def op_end(self, series_path: str, volume=None) -> None:
+        k = (series_path, volume)
+        n = self.busy_ops.get(k, 0) - 1
+        if n > 0:
+            self.busy_ops[k] = n
+        else:
+            self.busy_ops.pop(k, None)
+
+    def extra_block_reasons(self, series_path: str, volume=None) -> list:
+        """Hook: further reasons a series cannot be deleted or changed now (the queue and the quota wait of the
+        window are added here by the translate step)."""
+        return []
+
+    def series_block_reason(self, series_path: str, volume=None) -> str:
+        """Empty when the series (or one volume) may be deleted or removed now, else why not."""
+        try:
+            view = model.job_view(series_path)
+        except Exception:
+            view = None
+        return busy.block_reason(view, list(self.busy_ops), series_path, volume,
+                                 self.extra_block_reasons(series_path, volume))
+
+    def release_series(self, series_path: str, then) -> None:
+        """Close the books of the series that worker threads keep open (an open zip blocks a move on Windows),
+        then call `then()`. Waits at most a few seconds for a busy lane."""
+        lanes = [n for n in self.ui.worker.lane_names if n != "run"]
+        state = {"left": len(lanes), "done": False}
+
+        def finish(*a):
+            if state["done"]:
+                return
+            state["left"] -= 1
+            if state["left"] <= 0:
+                state["done"] = True
+                then()
+
+        def timeout():
+            if not state["done"]:
+                state["done"] = True
+                then()
+        for lane in lanes:
+            self.ui.worker.submit(lambda ctx: model.release_books_task(ctx, series_path), on_result=finish,
+                                  on_error=finish, lane=lane)
+        self.root.after(5000, timeout)
 
     def set_series(self, info) -> None:
         self.series = info

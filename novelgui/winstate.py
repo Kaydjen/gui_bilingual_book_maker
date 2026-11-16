@@ -133,3 +133,27 @@ class WinState:
         d = dict(d)
         d[volume] = [[int(a), int(b)] for a, b in spans]
         return self.set_in("selection", series, d)
+
+    def clear_volume_selection(self, series: str, volume: str) -> bool:
+        """Forget the chapter selection (and the remembered volume choice) of a volume that was removed."""
+        d = self.get_in("selection", series, None, dict)
+        if d and volume in d:
+            d = dict(d)
+            del d[volume]
+            self.set_in("selection", series, d)
+        if self.last_volume(series) == volume:
+            return self.delete_in("volume", series)
+        return True
+
+    def forget_series(self, series: str) -> bool:
+        """Drop everything the window remembers about a series that was deleted."""
+        ok = True
+        for key in ("selection", "prompt_draft", "volume"):
+            ok = self.delete_in(key, series) and ok
+        return ok
+
+    def last_volume(self, series: str) -> str:
+        return self.get_in("volume", series, "", str)
+
+    def set_last_volume(self, series: str, volume: str) -> bool:
+        return self.set_in("volume", series, volume)

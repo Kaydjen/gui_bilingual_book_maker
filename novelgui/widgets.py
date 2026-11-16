@@ -190,6 +190,41 @@ class Segmented(tk.Canvas):
                                      text="\u00b7 %s" % rest[1], anchor="w", font=f, fill=FAINT)
 
 
+class DotsButton(tk.Canvas):
+    """Icon-only `...` control (actions of a row or a volume). Brighter on hover, never darker than the window."""
+
+    def __init__(self, master, size, command, bg=BG):
+        super().__init__(master, width=size, height=size, bg=bg, highlightthickness=0, bd=0, cursor="hand2")
+        self.size, self.command, self.hover, self.enabled = size, command, False, True
+        self.bind("<Enter>", lambda e: self._set(True))
+        self.bind("<Leave>", lambda e: self._set(False))
+        self.bind("<ButtonRelease-1>", self._click)
+        self.draw()
+
+    def _set(self, v):
+        self.hover = v
+        self.draw()
+
+    def _click(self, e):
+        if self.enabled and 0 <= e.x < self.size and 0 <= e.y < self.size:
+            self.command(e)
+
+    def set_enabled(self, v):
+        if v != self.enabled:
+            self.enabled = v
+            self.configure(cursor="hand2" if v else "arrow")
+            self.draw()
+
+    def draw(self):
+        self.delete("all")
+        fg = FAINT if not self.enabled else (BRIGHT if self.hover else DIM)
+        r = max(1.5, self.size * 0.075)
+        cy = self.size / 2
+        for k in (-1, 0, 1):
+            cx = self.size / 2 + k * self.size * 0.26
+            self.create_oval(cx - r, cy - r, cx + r, cy + r, fill=fg, outline="")
+
+
 class Field(tk.Canvas):
     """A one-line text field on a rounded surface; `icon` adds the magnifier and a clear cross.
 
@@ -396,6 +431,7 @@ class ListPopup(tk.Canvas):
         self.on_cancel = None
         self.open = False
         self.hints = {}
+        self.disabled = set()
         self.root = root
         self.openers = []
         self.watched = set()
@@ -518,7 +554,8 @@ class ListPopup(tk.Canvas):
         r = self.root
         return (r.winfo_x(), r.winfo_y(), r.winfo_width(), r.winfo_height())
 
-    def show(self, root, x, y, w, items, cur, on_pick, on_cancel=None, labels=None, hints=None, openers=()):
+    def show(self, root, x, y, w, items, cur, on_pick, on_cancel=None, labels=None, hints=None, openers=(),
+             disabled=()):
         oc, self.opener_closed = self.opener_closed, None
         if oc is not None and time.monotonic() - oc[0] < 1.5 and oc[1] in openers:
             return                  # the press on the opener just closed this list: a second click only closes it
@@ -532,6 +569,7 @@ class ListPopup(tk.Canvas):
         self.armed = False
         self.after_idle(self._arm)
         self.hints = hints or {}
+        self.disabled = set(disabled)
         self.items = items
         self.labels = labels or {}
         self.cur = items.index(cur) if cur in items else 0
@@ -584,6 +622,8 @@ class ListPopup(tk.Canvas):
 
     def _pick(self, i, nxt):
         item = self.items[i]
+        if item in self.disabled:
+            return                  # a dim row does nothing; the list stays open
         cb = self.on_pick
         self.close()
         if cb:
@@ -597,7 +637,7 @@ class ListPopup(tk.Canvas):
             if i == self.cur:
                 rrect(self, 4, y, w - 4, y + self.rh, 5, fill=S4, outline="")
             self.create_text(int(self.rh * 0.5) + 4, y + self.rh / 2, text=self.labels.get(it, it), anchor="w",
-                             font=self.font, fill=BRIGHT if i == self.cur else TEXT)
+                             font=self.font, fill=FAINT if it in self.disabled else (BRIGHT if i == self.cur else TEXT))
             if self.hints.get(it):
                 self.create_text(w - int(self.rh * 0.5) - 4, y + self.rh / 2, text=self.hints[it], anchor="e",
                                  font=self.font, fill=DIM)

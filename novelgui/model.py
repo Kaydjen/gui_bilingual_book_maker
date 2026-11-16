@@ -7,8 +7,11 @@ run on the Tk thread. Books are opened per thread (a `Book` is not shared betwee
 from __future__ import annotations
 
 import difflib
+import gc
+import json
 import threading
 import time
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,6 +27,7 @@ from novelcore.terms import FILE_NAME as TERMS_FILE
 from novelcore.terms import TYPES, TermBase, import_glossary
 
 from . import chapterlogic as cl
+from .libraryrules import explain_oserror, natural_key
 from .termlogic import PRONOUNS
 
 EXPORT_READY = True
@@ -72,13 +76,21 @@ class SeriesInfo:
     target: str
     tag: str
     books: tuple
+    labels: tuple = ()      # ((volume name, label shown), ...) set by Rename volume
+    broken: str = ""        # why the series cannot be opened ("" = fine)
+
+    def label_of(self, stem: str) -> str:
+        return dict(self.labels).get(stem) or stem
 
 
 def list_series_task(ctx, library) -> list[SeriesInfo]:
+    """Every series of the library, the series folders only (`.deleted` and other hidden folders are not
+    series). A folder whose series.json cannot be read is listed too, marked `broken`, so the user sees it."""
     out = []
     lib = Path(library)
     try:
-        folders = sorted((p for p in lib.iterdir() if p.is_dir()), key=lambda p: p.name.lower())
+        folders = sorted((p for p in lib.iterdir() if p.is_dir() and not p.name.startswith(".")),
+                         key=lambda p: p.name.lower())
     except OSError:
         return out
     for p in folders:
@@ -87,29 +99,90 @@ def list_series_task(ctx, library) -> list[SeriesInfo]:
         try:
             s = Series.open(p)
         except (FileNotFoundError, ValueError):
+            out.append(SeriesInfo(p.name, str(p), "", "", (), (), _broken_reason(p)))
             continue
+        labels = s.settings.get("volume_labels")
+        labels = tuple(sorted((str(k), str(v)) for k, v in labels.items() if isinstance(v, str) and v.strip()))             if isinstance(labels, dict) else ()
+        books = tuple(sorted(s.book_names(), key=natural_key))
         out.append(SeriesInfo(str(s.settings.get("name") or p.name), str(p), str(s.settings.get("target", "")),
-                              s.target_tag, tuple(s.book_names())))
+                              s.target_tag, books, labels))
     return out
 
 
-def series_folder(library, name: str) -> Path:
-    return Path(library) / safe_name(name, 80, "series")
+def _broken_reason(folder: Path) -> str:
+    """Why series.json of a folder cannot be used, in plain words."""
+    try:
+        data = json.loads((folder / "series.json").read_text(encoding="utf-8"))
+    except OSError as exc:
+        return "series.json cannot be opened (%s)" % explain_oserror(exc)
+    except ValueError:
+        return "series.json is damaged"
+    return "series.json is not a series record" if not isinstance(data, dict) else "series.json cannot be read"
 
 
-def series_exists(library, name: str) -> bool:
-    return (series_folder(library, name) / "series.json").exists()
+def clean_name(text: str, maxlen: int = 60, fallback: str = "item") -> str:
+    """The core's file name cleaning (window rules that build names call this, never a copy of it)."""
+    return safe_name(text, maxlen, fallback)
 
 
-def create_series_task(ctx, library, name: str, target: str, epub) -> str:
-    """New series with its first book. Returns the series folder."""
-    series = Series.create(library, name, target)
-    series.add_book(epub)
-    return str(series.path)
+def check_epub(path) -> int:
+    """Open a file with the core's EPUB reader; returns its number of chapters. Raises ValueError with the
+    reason in plain words when it cannot be read."""
+    p = Path(path)
+    try:
+        book = Book.open(p)
+    except zipfile.BadZipFile:
+        raise ValueError("it is not an EPUB file (not a zip archive)") from None
+    except OSError as exc:
+        raise ValueError("it cannot be opened (%s)" % (exc.strerror or exc)) from None
+    except Exception as exc:
+        text = str(exc)
+        if "not a zip" in text.lower():
+            raise ValueError("it is not an EPUB file (not a zip archive)") from None
+        raise ValueError("it cannot be read as an EPUB (%s)" % (text.rsplit(": ", 1)[-1][:120]
+                                                                or type(exc).__name__)) from None
+    try:
+        n = len(book.chapters)
+    except Exception as exc:
+        raise ValueError("it cannot be read as an EPUB (%s)" % (str(exc)[:120] or type(exc).__name__)) from None
+    finally:
+        try:
+            book.close()
+        except Exception:
+            pass
+    if n == 0:
+        raise ValueError("it has no chapters")
+    return n
 
 
-def add_book_task(ctx, series_path, epub) -> str:
-    return Series.open(series_path).add_book(epub)
+def create_series_record(library, name: str, target: str, **settings) -> str:
+    """Write series.json (and the folders) of a new series; returns the series folder. One write."""
+    return str(Series.create(library, name, target, **settings).path)
+
+
+def update_series_settings(series_path, fn) -> None:
+    """Read series.json, let `fn(settings_dict)` change it, write it back atomically."""
+    s = Series.open(series_path)
+    fn(s.settings)
+    s.save_settings()
+
+
+def release_books_task(ctx, folder) -> int:
+    """Close every book of `folder` that this worker thread holds open (an open zip blocks a move on Windows).
+    Runs once on every lane thread. Returns how many were closed."""
+    cache = getattr(_local, "books", None)
+    n = 0
+    if cache:
+        root = str(Path(folder)).lower()
+        for key in list(cache):
+            if str(key).lower().startswith(root):
+                try:
+                    cache.pop(key)[1].close()
+                except Exception:
+                    pass
+                n += 1
+    gc.collect()        # a book dropped without being closed sits in a reference cycle until the collector runs
+    return n
 
 
 def gender_marks(tag: str) -> dict:
@@ -123,15 +196,6 @@ def target_label(target: str) -> str:
     """Language name for column headers: 'ru:Russian' -> 'Russian' (profile name for a bare tag)."""
     tag, name = split_target(target)
     return profiles.get(tag, name if name != tag else None).name
-
-
-def target_of(choice: str, other: str = "") -> str:
-    """'tag:Name' of a language choice; `other` is the text typed for the Other choice."""
-    for value, label in TARGETS:
-        if choice == label:
-            return value
-    tag, name = split_target(other)
-    return "%s:%s" % (tag, name) if tag else "ru:Russian"
 
 
 # ---------------------------------------------------------------- chapters of a book

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from . import keystore, model, tips
+from . import keystore, model, platform, tips
 from .dialog import Modal
 from .settings import DEFAULT_MODEL, old_data_dir
 from .theme import BG, BRIGHT, DIM, FAINT, S1, S2, S4, TEXT
@@ -137,6 +137,27 @@ class SettingsPanel(Modal):
         attach_tip(self.awake, ui.tip, awake_tip)
         attach_tip(awake_label, ui.tip, awake_tip)
 
+        # library (2.4)
+        lrow = tk.Frame(body, bg=S2)
+        lrow.pack(fill="x", padx=pad, pady=(gap, 0))
+        lib_label = tk.Label(lrow, text="Library", bg=S2, fg=DIM, font=f)
+        lib_label.pack(side="left", anchor="n", padx=(0, gap))
+        self.change_btn = Pill(lrow, "Change", self._change_library, f, kind="dim", bg=S2)
+        self.change_btn.pack(side="right", anchor="n", padx=(gap, 0))
+        self.lib_path = tk.Label(lrow, text=str(app.library or "not chosen"), bg=S2, fg=TEXT, font=f, anchor="w",
+                                 justify="left", wraplength=ui.cw * 40, cursor="hand2" if app.library else "arrow")
+        self.lib_path.pack(side="left", fill="x", expand=True)
+        self.lib_path.bind("<ButtonRelease-1>", lambda e: self._open_library())
+        self.lib_path.bind("<Enter>", lambda e: self.lib_path.configure(fg=BRIGHT))
+        self.lib_path.bind("<Leave>", lambda e: self.lib_path.configure(fg=TEXT))
+        self._lib_reason = app.library_block_reason()
+        self.change_btn.set_enabled(not self._lib_reason)
+        lib_tip = lambda e: tips.LIBRARY_PATH
+        attach_tip(self.lib_path, ui.tip, lib_tip)
+        attach_tip(lib_label, ui.tip, lib_tip)
+        attach_tip(self.change_btn, ui.tip, lambda e: (self._lib_reason or None) if not self.change_btn.enabled
+                   else tips.LIBRARY_CHANGE)
+
         close = tk.Frame(body, bg=S2)
         close.pack(fill="x", padx=pad, pady=(gap, 0))
         Pill(close, "Close", self.close, f, bg=S2).pack(side="right")
@@ -230,6 +251,14 @@ class SettingsPanel(Modal):
         if self.is_open:
             self.pace.commit()
         super().close()
+
+    def _open_library(self):
+        if self.app.library:
+            platform.open_folder(self.app.library)
+
+    def _change_library(self):
+        """Choose another folder; the panel closes once the library is changed."""
+        self.app.change_library(on_done=self.close)
 
     def _awake_picked(self, key):
         self.settings.set("keep_awake", key == "on")

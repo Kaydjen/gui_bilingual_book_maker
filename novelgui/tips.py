@@ -12,3 +12,41 @@ SELECTED_CHAPTERS = "Show only the terms that occur in the chapters selected on 
 
 # Settings: the label of the keep-awake row
 KEEP_AWAKE_LABEL = "Keep the computer awake while translating"
+
+# Books: actions of a series row and of a volume
+SERIES_ACTIONS = ("Actions for this series: rename it, open its folder, delete it.",
+                  [("Rename", "changes the shown name only"), ("Delete", "moves it to .deleted")])
+VOLUME_ACTIONS = ("Actions for this volume: rename it or remove it from the series.",
+                  [("Rename", "changes the shown label only"), ("Remove", "moves its files to .deleted")])
+BROKEN_SERIES = "This series cannot be opened: %s."
+
+# Add book panel
+ADD_VOLUME_OF = ("The file becomes another book of this series. The glossary, the language and the settings "
+                 "of the series are shared by all its books.",
+                 [("Copies the file", "into the series folder"), ("Original", "stays where it is")])
+ADD_NEW_SERIES = ("A separate series with its own glossary, language and settings. The file is copied into it.",
+                  [("Copies the file", "into the new folder"), ("Original", "stays where it is")])
+ADD_SERIES_NAME = ("The name of the series as the list shows it. Its folder in the library is named after it.",
+                   [("Must be", "unused in the library")])
+ADD_SERIES_NAME_FIXED = "The name of the series this volume goes to. Change it with Rename in the series menu."
+
+# Settings: the library row
+LIBRARY_PATH = ("The folder that holds every series. Click to open it.",
+                [("Kept in", "this app's settings"), ("Series", "one sub-folder each")])
+LIBRARY_CHANGE = ("Choose another folder for the library. Series in the old folder are not moved.",
+                  [("Needs", "no running translation")])
+
+# Deleting and removing: why it is not possible now
+CANNOT_NOW = "%s Try again when it has ended."
+
+# Books: the typed range
+CHAPTERS_FIELD = ("Type chapter numbers as they are printed in the titles, for example 2729-2783 or 5, 9-12, and "
+                  "press Enter. A number the book does not have is left out; when no title carries a number "
+                  "in the range, the numbers are taken as the No. of the list.",
+                  [("Format", "a-b, or a, b, c-d"), ("Counts", "title numbers"), ("Fallback", "position")])
+
+# First start
+FIRST_START_PATH = ("The folder that will hold every series, with its books and translations. A new folder is "
+                    "created; a folder that already holds series is used as it is.",
+                    [("Default", "Novel library, in Documents"), ("Kept in", "this app's settings")])
+FIRST_START_CREATE = "Use this folder as the library."

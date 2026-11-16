@@ -6,7 +6,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
 
-from . import model
+from . import addbook, model, tips
 from .theme import BG, BRIGHT, DIM, FAINT, S1, S2, S4, TEXT
 from .tooltip import attach_tip
 from .widgets import Field, Pill, Segmented
@@ -227,24 +227,27 @@ def message(ui, text: str, on_close=None) -> Modal:
 
 
 class AddBookDialog(Modal):
-    """Asks whether the file starts a new series or is a volume of the selected one."""
+    """Add book (window_spec 5): the file name, `Volume of <series> | New series` (only with a series selected)
+    and the series name. The size is the same in both modes: the name field is always there, dim while the
+    file goes into the selected series. No language here: it is chosen when translating."""
 
-    def __init__(self, ui, library, epub: str, series, on_done):
-        super().__init__(ui)
+    def __init__(self, ui, library, epub: str, series, on_done, used=((), ()), on_closed=None):
+        super().__init__(ui, (lambda: on_closed(self)) if on_closed else None)
+        self.confirmed = False
         self.library = library
         self.series = series
         self.epub = epub
         self.on_done = on_done
+        self.used = used                    # (folder names, shown names) of the library, for the name check
         f = ui.font
         gap = int(ui.ls * 0.7)
         body = self.body
-        self.mode = "new" if series is None else "volume"
-        self.target_choice = "Russian"
+        self.mode = "volume" if series is not None else "new"
         pad = self.pad
 
         row = tk.Frame(body, bg=S2)
         row.pack(fill="x", padx=pad, pady=(pad, gap))
-        tk.Label(row, text=Path(epub).name, bg=S2, fg=DIM, font=f, anchor="w").pack(side="left")
+        tk.Label(row, text=_short(Path(epub).name, 52), bg=S2, fg=TEXT, font=f, anchor="w").pack(side="left")
 
         self.mode_seg = None
         if series is not None:
@@ -252,85 +255,125 @@ class AddBookDialog(Modal):
             self.mode_seg.set_items([("volume", "Volume of " + _short(series.name, 28), None),
                                      ("new", "New series", None)], self.mode)
             self.mode_seg.pack(anchor="w", padx=pad, pady=(0, gap))
+            attach_tip(self.mode_seg, ui.tip, self._mode_tip)
 
-        self.new_box = tk.Frame(body, bg=S2)
-        self.new_box.pack(fill="x", padx=pad)
-        tk.Label(self.new_box, text="Name", bg=S2, fg=DIM, font=f, anchor="w").pack(anchor="w")
-        self.name = Field(self.new_box, f, on_change=lambda s: self._validate(), on_submit=lambda s: self._ok(),
+        self.name_label = tk.Label(body, text="Series name", bg=S2, fg=DIM, font=f, anchor="w")
+        self.name_label.pack(anchor="w", padx=pad)
+        self.name = Field(body, f, on_change=lambda s: self._validate(), on_submit=lambda s: self._ok(),
                           bg=S2, width=ui.cw * 46, surface=S1)
-        self.name.pack(fill="x", pady=(2, gap))
-        self.name.set(_prefill(epub))
-        tk.Label(self.new_box, text="Language", bg=S2, fg=DIM, font=f, anchor="w").pack(anchor="w")
-        self.lang = Segmented(self.new_box, f, self._lang_changed, bg=S2)
-        self.lang.set_items([(lbl, lbl, None) for _v, lbl in model.TARGETS] + [("Other", "Other", None)],
-                            "Russian")
-        self.lang.pack(anchor="w", pady=(2, 0))
-        self.other = Field(self.new_box, f, on_change=lambda s: self._validate(), on_submit=lambda s: self._ok(),
-                           bg=S2, surface=S1)
-        attach_tip(self.other, ui.tip, lambda e: (
-            "The language as tag:Name, for example de:German. The tag is used in file names and in the term "
-            "base, the name is told to the translator.", [("Example", "de:German")]))
+        self.name.pack(fill="x", padx=pad, pady=(2, gap))
+        attach_tip(self.name.entry, ui.tip, lambda e: self._name_tip())
+        attach_tip(self.name_label, ui.tip, lambda e: self._name_tip())
 
         btns = tk.Frame(body, bg=S2)
         btns.pack(fill="x", padx=pad, pady=(int(gap * 1.4), 0))
-        self.btns = btns
-        self.add_btn = Pill(btns, "Add", self._ok, f, kind="accent", bg=S2)
+        self.add_btn = Pill(btns, "Add", self._ok, f, bg=S2)
         self.add_btn.pack(side="right")
         Pill(btns, "Cancel", self.close, f, kind="dim", bg=S2).pack(side="right", padx=(0, gap // 2))
         attach_tip(self.add_btn, ui.tip, lambda e: self._add_tip())
         self._apply_mode()
         self.show()
-        self.name.entry.focus_set() if self.mode == "new" else self.add_btn.focus_set()
-        self.name.entry.select_range(0, "end")
+        if self.mode == "new":
+            self.name.entry.focus_set()
+            self.name.entry.select_range(0, "end")
+        else:
+            self.add_btn.focus_set()
 
     # -- state
+    def _mode_tip(self, e):
+        i = self.mode_seg.seg_at(e.x)
+        if i is None:
+            return None
+        return tips.ADD_VOLUME_OF if self.mode_seg.items[i][0] == "volume" else tips.ADD_NEW_SERIES
+
+    def _name_tip(self):
+        return tips.ADD_SERIES_NAME_FIXED if self.mode == "volume" else tips.ADD_SERIES_NAME
+
+    def _problem(self) -> str:
+        if self.mode != "new":
+            return ""
+        return addbook.series_name_problem(self.name.get(), model.clean_name, self.used[0], self.used[1])
+
     def _add_tip(self):
         if self.add_btn.enabled:
             return None
-        return "A series with this name already exists. Change the name, or add the file as a volume of it."
+        return self._problem() or None
 
     def _mode_changed(self, v):
         self.mode = v
         self._apply_mode()
 
-    def _lang_changed(self, v):
-        self.target_choice = v
-        self._apply_mode()
-
     def _apply_mode(self):
-        if self.mode == "new":
-            self.new_box.pack(fill="x", padx=self.pad, before=self.btns)
+        if self.mode == "volume":
+            self.name.set(self.series.name)
+            self.name.set_enabled(False)
+            self.name_label.configure(fg=FAINT)
         else:
-            self.new_box.pack_forget()
-        if self.mode == "new" and self.target_choice == "Other":
-            self.other.pack(fill="x", pady=(int(self.ui.ls * 0.4), 0))
-        else:
-            self.other.pack_forget()
+            self.name.set_enabled(True)
+            self.name.set(_prefill(self.epub))
+            self.name_label.configure(fg=DIM)
+            self.name.entry.focus_set()
+            self.name.entry.select_range(0, "end")
         self._validate()
 
     def _validate(self):
         if not hasattr(self, "add_btn"):
             return
-        ok = True
-        if self.mode == "new":
-            name = self.name.get().strip()
-            ok = bool(name) and not model.series_exists(self.library, name)
-            if self.target_choice == "Other":
-                ok = ok and ":" in self.other.get() and bool(self.other.get().split(":")[0].strip())
-        self.add_btn.set_enabled(ok)
+        self.add_btn.set_enabled(not self._problem())
 
     def result(self) -> dict:
         if self.mode == "volume":
             return {"mode": "volume", "series": self.series.path, "epub": self.epub}
-        return {"mode": "new", "name": self.name.get().strip(), "epub": self.epub,
-                "target": model.target_of(self.target_choice, self.other.get())}
+        return {"mode": "new", "name": self.name.get().strip(), "epub": self.epub}
 
     def _ok(self):
         if not self.add_btn.enabled:
             return
         res = self.result()
+        self.confirmed = True
         self.close()
         self.on_done(res)
+
+
+class RenameDialog(Modal):
+    """One name to edit: the series name or a volume label. `check(text)` returns the reason a name is not
+    allowed ("" when it is); `on_done(text)` runs after the panel closed."""
+
+    def __init__(self, ui, caption: str, value: str, check, on_done, button: str = "Rename"):
+        super().__init__(ui)
+        self.check = check
+        self.on_done = on_done
+        f = ui.font
+        gap = int(ui.ls * 0.7)
+        pad = self.pad
+        tk.Label(self.body, text=caption, bg=S2, fg=DIM, font=f, anchor="w").pack(anchor="w", padx=pad,
+                                                                                    pady=(pad, 2))
+        self.field = Field(self.body, f, on_change=lambda s: self._validate(), on_submit=lambda s: self._ok(),
+                           bg=S2, width=ui.cw * 46, surface=S1)
+        self.field.pack(fill="x", padx=pad, pady=(0, gap))
+        self.field.set(value)
+        btns = tk.Frame(self.body, bg=S2)
+        btns.pack(fill="x", padx=pad, pady=(int(gap * 0.6), 0))
+        self.ok_btn = Pill(btns, button, self._ok, f, bg=S2)
+        self.ok_btn.pack(side="right")
+        Pill(btns, "Cancel", self.close, f, kind="dim", bg=S2).pack(side="right", padx=(0, gap // 2))
+        attach_tip(self.ok_btn, ui.tip, lambda e: None if self.ok_btn.enabled else (self.check(self.field.get())
+                                                                                     or None))
+        self._validate()
+        self.show()
+        self.field.entry.focus_set()
+        self.field.entry.select_range(0, "end")
+
+    def _validate(self):
+        if hasattr(self, "ok_btn"):
+            self.ok_btn.set_enabled(not self.check(self.field.get()))
+
+    def _ok(self):
+        if not self.ok_btn.enabled:
+            return
+        text = self.field.get().strip()
+        self.close()
+        self.on_done(text)
 
 
 def _short(s: str, n: int) -> str:
