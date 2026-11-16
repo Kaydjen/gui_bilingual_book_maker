@@ -21,7 +21,7 @@ MINUTE_MIN, MINUTE_MAX = 8.0, 90.0
 MINUTE_DEFAULT = 20.0  # cooldown when a 429 gave no retry hint
 DAY_MARGIN = 60.0
 
-DEFAULT_PACE = 24  # sends per minute in total, over all keys and models
+DEFAULT_PACE = 5  # sends per minute in total, over all keys and models
 PACE_MIN, PACE_MAX = 1, 120
 SHUT_FIRST, SHUT_MAX = 60.0, 900.0  # first pause after a throttled answer, and the longest one
 SHUT_LIMIT = 1800.0  # the pauses of one shut state may add up to this many seconds

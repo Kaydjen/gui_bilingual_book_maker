@@ -374,7 +374,7 @@ def main(argv=None) -> None:
         p.add_argument("--models", default=DEFAULT_MODELS)
         p.add_argument("--use-keys", type=int, help="use only the first N keys")
         p.add_argument("--pace", type=_pace, help="requests per minute in total (1-120; default: series "
-                       "setting `pace`, else 24)")
+                       "setting `pace`, else 5)")
         p.add_argument("--book")
 
     p = add("sample", cmd_sample)

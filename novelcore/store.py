@@ -31,7 +31,7 @@ DEFAULTS = {
     "naming_policy": "",
     "per_request": 5,
     "temperature": 1.0,
-    "pace": None,  # None: not set (the runner falls back to its default of 24 a minute)
+    "pace": None,  # None: not set (the runner falls back to its default of 5 a minute)
     "in_flight": None,  # None: not set (the runner falls back to 12)
 }
 NEWLINE = bytes([10])

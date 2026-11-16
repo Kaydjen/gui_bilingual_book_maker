@@ -242,9 +242,9 @@ class SettingsDefaultsTest(JobCase):
     def test_pace_and_in_flight_default_to_not_set(self):
         self.assertIsNone(self.series.settings["pace"])
         self.assertIsNone(self.series.settings["in_flight"])
-        self.assertEqual(clean_pace(None), 24)
+        self.assertEqual(clean_pace(None), 5)
         r = self.runner()
-        self.assertEqual((r.pace, r.in_flight), (24, 12))
+        self.assertEqual((r.pace, r.in_flight), (5, 12))
         self.series.settings.update(pace=30, in_flight=5)
         self.series.save_settings()
         r2 = self.runner()

@@ -98,7 +98,7 @@ class QuotaTest(CoreCase):
     api_args = {"rpm": 3, "retry_delay": 17}
 
     def test_minute_429_cools_pair_others_continue(self):
-        r, summary, _ = self.run_all(in_flight=3)
+        r, summary, _ = self.run_all(in_flight=3, pace=24)
         self.assertEqual(self.count_done(), (24, 24))
         limited = self.api.requests(status=429)
         self.assertGreater(len(limited), 0)

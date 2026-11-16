@@ -262,7 +262,7 @@ class Runner:
                  timeout=300, generate=None, shared_limit=True, pace=None, end_on_quota=False,
                  chapters=None, gate=None):
         """`pace`: sends per minute in total (1-120); `in_flight`: requests at once. Both fall back to the
-        series settings `pace` and `in_flight`, then to 24 and 12. With `end_on_quota` the run ends (event
+        series settings `pace` and `in_flight`, then to DEFAULT_PACE (5) and 12. With `end_on_quota` the run ends (event
         `quota`, `quota_until` set) when every pair is used up for the day, instead of waiting for it.
         `listener(event)`, if set, sees every event in the emitting thread before it is queued.
         `chapters`: a list of chapter indices (any order, duplicates and out-of-range ones dropped)

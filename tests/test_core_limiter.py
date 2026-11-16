@@ -28,8 +28,8 @@ def window_peak(times, window=60.0, eps=1e-6) -> int:
 
 class PaceSetting(unittest.TestCase):
     def test_default_range_and_errors(self):
-        self.assertEqual(DEFAULT_PACE, 24)
-        self.assertEqual(clean_pace(None), 24)
+        self.assertEqual(DEFAULT_PACE, 5)
+        self.assertEqual(clean_pace(None), 5)
         self.assertEqual((clean_pace(1), clean_pace("120"), clean_pace(7.5)), (1, 120, 7.5))
         for bad in (0, 0.5, 121, -3, "fast", float("nan"), []):
             with self.subTest(bad=bad):
@@ -359,12 +359,12 @@ class PaceRunTest(CoreCase):
         self.api.stop()
         self._tmp.cleanup()
 
-    def test_run_is_even_across_keys_and_the_default_pace_is_24(self):
+    def test_run_is_even_across_keys_and_the_default_pace_is_5(self):
         r, summary, events = self.run_all(in_flight=12)
-        self.assertEqual(r.pace, 24)
+        self.assertEqual(r.pace, 5)
         self.assertEqual(r.in_flight, 12)
-        self.assertEqual(summary["pace"]["set"], 24)
-        self.assertEqual([e["pace"] for e in events if e.kind == "started"], [24])
+        self.assertEqual(summary["pace"]["set"], 5)
+        self.assertEqual([e["pace"] for e in events if e.kind == "started"], [5])
         counts = self.api.sends_per_key()
         self.assertEqual(sum(counts), 60)
         self.assertLessEqual(max(counts) - min(counts), 1)
@@ -383,7 +383,7 @@ class PaceRunTest(CoreCase):
 
     def test_503_of_one_request_does_not_hold_the_others_back(self):
         self.api.unavailable_at = {1, 5}
-        r, summary, _ = self.run_all(in_flight=6)
+        r, summary, _ = self.run_all(in_flight=6, pace=24)
         self.assertEqual(self.count_done(), (60, 60))
         self.assertEqual(summary["requests"]["unavailable"], 2)
         times = sorted(e["t"] for e in self.api.log)
@@ -395,7 +395,7 @@ class PaceRunTest(CoreCase):
 
     def test_a_lone_throttled_answer_is_retried_without_a_pause(self):
         self.api.shut = [(START + 10, START + 10.1)]  # exactly one send falls in it
-        r, summary, events = self.run_all(in_flight=6)
+        r, summary, events = self.run_all(in_flight=6, pace=24)
         self.assertEqual(self.count_done(), (60, 60))
         refused = [e for e in self.api.log if e["status"] == 429]
         self.assertEqual(len(refused), 1)
@@ -539,7 +539,7 @@ class QuotaNamed429Test(CoreCase):
     api_args = {"rpm": 3, "retry_delay": 17}
 
     def test_quota_named_429_still_cools_only_its_pair(self):
-        r, summary, events = self.run_all(in_flight=3)
+        r, summary, events = self.run_all(in_flight=3, pace=24)
         self.assertEqual(self.count_done(), (36, 36))
         self.assertGreater(summary["requests"]["minute"], 0)
         self.assertEqual(summary["requests"].get("throttled", 0), 0)
