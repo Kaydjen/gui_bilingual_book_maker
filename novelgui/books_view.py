@@ -41,7 +41,7 @@ class SeriesTable(VTable):
         c.create_text(x + self.pad, y + mid, text=self.fit(row.name, w - 2 * self.pad), anchor="w", font=self.font,
                       fill=FAINT if broken else (BRIGHT if on else TEXT))
         x, w = cols["tag"]
-        c.create_text(x + w - self.pad, y + mid, text="!" if broken else row.tag, anchor="e", font=self.font,
+        c.create_text(x + w - self.pad, y + mid, text="!" if broken else (row.tag if model.series_language(row) else ""), anchor="e", font=self.font,
                       fill=DIM)
         if on or (self.hover is not None and self.rows[self.hover] is row):
             x, w = cols["act"]
@@ -65,7 +65,10 @@ class SeriesTable(VTable):
         if s.broken:
             return tips.BROKEN_SERIES % s.broken
         books = len(s.books)
-        return ("%s, translated into %s." % (s.name, s.target.partition(":")[2] or s.tag),
+        lang = model.series_language(s)
+        if lang is None:
+            return (tips.SERIES_NO_LANGUAGE, [("Books", str(books)), ("Folder", Path(s.path).name)])
+        return ("%s, translated into %s." % (s.name, lang.partition(":")[2] or s.tag),
                 [("Language tag", s.tag), ("Books", str(books)), ("Folder", Path(s.path).name)])
 
 
@@ -342,6 +345,17 @@ class BooksStep(Step):
             message(self.ui, "The library could not be read: %s." % why)
         self.ui.worker.submit(lambda ctx: model.list_series_task(ctx, lib), on_result=done, on_error=failed,
                               lane="bulk")
+
+    def replace_series(self, info) -> None:
+        """The same series with new facts (its language was chosen): swap the row in place, so nothing is
+        reloaded and the selection stays."""
+        for lst in {id(self.series_list): self.series_list, id(self.series_table.rows): self.series_table.rows}.values():
+            for i, r in enumerate(lst):
+                if r.path == info.path:
+                    self.series_table.pos.pop(id(r), None)
+                    lst[i] = info
+                    self.series_table.pos[id(info)] = i
+        self.series_table.draw()
 
     def _refresh_accent(self):
         """`Add book` is red only while the library or the selected series has no book (10.2); the one-red

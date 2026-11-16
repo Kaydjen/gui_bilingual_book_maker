@@ -36,5 +36,8 @@ class Step(tk.Frame):
     def on_selection(self) -> None:
         """The chapter selection changed."""
 
+    def on_language(self) -> None:
+        """The target language of the current series was chosen or changed."""
+
     def shutdown(self) -> None:
         """The window is closing: flush what must be kept."""

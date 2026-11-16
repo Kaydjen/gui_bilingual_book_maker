@@ -479,6 +479,10 @@ class VTable(tk.Frame):
             self.draw()
             self.draw_head()
 
+    def head_colour(self, col, active):
+        """Colour of a column heading (a table may mark one heading, e.g. with the accent)."""
+        return BRIGHT if active else DIM
+
     def draw_head(self):
         if not self.show_header:
             return
@@ -489,7 +493,7 @@ class VTable(tk.Frame):
         for col in self.cols:
             cx, w = xs[col.key]
             active = col.key == self.sort_key
-            fg = BRIGHT if active else DIM
+            fg = self.head_colour(col, active)
             arrow = "↓" if self.sort_desc else "↑"
             if col.align == "e":
                 h.create_text(cx + w - self.pad, self.rh / 2, text=col.label, anchor="e", font=self.font, fill=fg)

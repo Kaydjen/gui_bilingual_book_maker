@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 import tkinter as tk
 
+from . import accent, langrules, tips
 from . import chapterlogic as cl
 from . import jobstate as js
 from . import model, platform
@@ -59,6 +60,8 @@ class TranslateStep(Step):
         self.prompt_btn.pack(side="left")
         self.edit_btn = Pill(top, "Edit", self._edit_prompt, f, kind="dim")
         self.edit_btn.pack(side="left", padx=(gap // 2, 0))
+        self.to_btn = Pill(top, "To  ▾", self._open_language, f)
+        self.to_btn.pack(side="left", padx=(gap, 0))
         self.per_seg = Segmented(top, f, self._per_request_picked)
         self.per_seg.set_items([(str(n), str(n), None) for n in PER_REQUEST], "5")
         self.per_seg.pack(side="right")
@@ -69,6 +72,7 @@ class TranslateStep(Step):
         attach_tip(self.edit_btn, ui.tip, lambda e: (
             "Write or change a prompt. It is saved under its name and becomes the prompt of this series.",
             [("Saved in", "the app data folder")]))
+        attach_tip(self.to_btn, ui.tip, lambda e: self._to_tip())
         attach_tip(self.per_seg, ui.tip, lambda e: (
             "How many blocks travel in one request. More blocks per request mean fewer requests of the daily "
             "quota; every block is checked on its own either way.",
@@ -92,7 +96,7 @@ class TranslateStep(Step):
         attach_tip(self.new_btn, ui.tip, lambda e: (
             "Start the selected chapters as a new job instead of continuing the unfinished one. Translated blocks "
             "are kept.", [("Replaces", "the unfinished job"), ("Keeps", "translated blocks")]))
-        attach_tip(self.sample_btn, ui.tip, lambda e: (
+        attach_tip(self.sample_btn, ui.tip, lambda e: tips.NEED_LANGUAGE if not self._language_ok() else (
             "Translate the first blocks of the first selected chapter to see how it reads. Nothing is added to "
             "the book, and the terms check does not apply.",
             [("Blocks", "the number on the right"), ("Uses", "requests of today"), ("Saved", "no")]))
@@ -126,6 +130,10 @@ class TranslateStep(Step):
     # ------------------------------------------------------------- life
     def on_show(self):
         self.refresh_all()
+
+    def on_language(self):
+        self._sync_settings()
+        self._update_controls()
 
     def on_series(self):
         self.sample_info = None
@@ -182,6 +190,8 @@ class TranslateStep(Step):
     # ------------------------------------------------------------- settings row
     def _sync_settings(self):
         s = self.app.series
+        lang = self.app.series_language()
+        self.to_btn.set_text("To  ▾" if lang is None else "To %s  ▾" % langrules.label(lang, model.TARGETS))
         if s is None:
             self.prompt_btn.set_text("Default  ▾")
             return
@@ -190,6 +200,27 @@ class TranslateStep(Step):
         self.prompt_btn.set_text(("Default" if name.lower() == RESERVED else name) + "  ▾")
         pr = st.get("per_request")
         self.per_seg.set_value(str(pr) if pr in PER_REQUEST else "5")
+
+    def _open_language(self):
+        b = self.to_btn
+        if self.app.series is None or not b.enabled:
+            return
+        self.app.language_menu(b.winfo_rootx(), b.winfo_rooty() + b.h + 4, openers=(b,))
+
+    def _language_busy(self) -> str:
+        """Why `To` cannot be used now ("" when it can): this window runs, or a job of the series waits."""
+        s = self.app.series
+        if s is None:
+            return ""
+        if self.running:
+            return "A translation of this series is running."
+        return self.app.language_block_reason(s.path, self.view)
+
+    def _to_tip(self):
+        why = self._language_busy()
+        if why:
+            return tips.TO_BUSY % why
+        return tips.TO_EMPTY if self.app.series_language() is None else tips.TO_CHOSEN
 
     def _per_request_picked(self, v):
         s = self.app.series
@@ -269,11 +300,15 @@ class TranslateStep(Step):
 
     def _action(self) -> js.Action:
         has_sel = bool(self._selection_indices()) and self._has_keys()
-        a = js.main_action(self.view, self.running and self.run_kind in ("job", "sample"), self.stopping, has_sel,
-                           self._same_selection(), time.time(), self.terms_now)
-        if a.label == "Continue" and not self._has_keys():
+        a = js.main_action(self.view, self.running and self.run_kind in ("job", "sample"), self.stopping,
+                           has_sel and self._language_ok(), self._same_selection(), time.time(), self.terms_now)
+        if a.label == "Continue" and (not self._has_keys() or not self._language_ok()):
             a = js.Action("Continue", False, a.new_run)
         return a
+
+    def _language_ok(self) -> bool:
+        """Run, Continue and Sample need the language of the series."""
+        return self.app.series is None or self.app.series_language() is not None
 
     def _chip(self) -> js.Chip:
         return js.chip_for(self.view, self.running, self.stopping, self.paused_until, time.time(), self.terms_now)
@@ -283,7 +318,14 @@ class TranslateStep(Step):
         chip = self._chip()
         nprob = len(self.problems)
         owner = js.accent_owner(a, chip, nprob, self.running)
+        facts = accent.Facts(self._has_keys(), self._language_ok(), False)
+        top = accent.owner(facts, owner)
+        owner = "" if top in (accent.KEYS, accent.LANGUAGE) else top
         self.owner = owner
+        to_kind = "accent" if accent.gets_accent(accent.LANGUAGE, facts) else "plain"
+        if self.to_btn.kind != to_kind:
+            self.to_btn.kind = to_kind
+            self.to_btn.draw()
         m = self.main_btn
         m.kind = "accent" if owner == "action" and a.label != "Stop" else "plain"
         m.set_text(a.label)
@@ -297,8 +339,10 @@ class TranslateStep(Step):
         idle = not self.running and not self.view.foreign and self.app.series is not None
         self.prompt_btn.set_enabled(idle)
         self.edit_btn.set_enabled(idle)
+        self.to_btn.set_enabled(idle and self.app.series is not None and not self._language_busy())
         self.per_seg.set_enabled(idle)
-        self.sample_btn.set_enabled(idle and bool(self._selection_indices()) and self._has_keys())
+        self.sample_btn.set_enabled(idle and bool(self._selection_indices()) and self._has_keys()
+                                    and self._language_ok())
         self.sample_n.set_enabled(idle)
         self.problems_panel.set_enabled(idle and self._has_keys())
         self.problems_panel.set_accent(owner == "problems")
@@ -332,6 +376,8 @@ class TranslateStep(Step):
                     "where it stopped.", [("Saved", "every finished block")])
         if not self._has_keys():
             return "Add an API key in the settings (the gear in the header) to translate."
+        if not self._language_ok():
+            return tips.NEED_LANGUAGE
         if a.label == "Continue":
             if v.state == "waiting_quota" and not a.enabled:
                 return ("The daily quota of every key is used up. The job continues after the quota returns.",
@@ -512,7 +558,7 @@ class TranslateStep(Step):
 
     def _start_job(self, resume: bool):
         s = self.app.series
-        if s is None or self.running or self.view.foreign or not self._has_keys():
+        if s is None or self.running or self.view.foreign or not self._has_keys() or not self._language_ok():
             return
         cfg = self._config()
         if resume:
@@ -726,7 +772,8 @@ class TranslateStep(Step):
     def _start_sample(self):
         s = self.app.series
         idx = self._selection_indices()
-        if s is None or not idx or self.running or self.view.foreign or not self._has_keys():
+        if (s is None or not idx or self.running or self.view.foreign or not self._has_keys()
+                or not self._language_ok()):
             return
         try:
             n = max(1, min(500, int(self.sample_n.get().strip() or "50")))
@@ -756,7 +803,7 @@ class TranslateStep(Step):
         self._show_content()
         self.update_idletasks()
         s = self.app.series
-        self.sample.set_rows(rows, model.target_label(s.target) if s else "")
+        self.sample.set_rows(rows, model.target_label(model.series_language(s)) if s and model.series_language(s) else "")
 
     def _close_sample(self):
         self.sample_info = None

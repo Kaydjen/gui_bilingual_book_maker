@@ -50,3 +50,17 @@ FIRST_START_PATH = ("The folder that will hold every series, with its books and 
                     "created; a folder that already holds series is used as it is.",
                     [("Default", "Novel library, in Documents"), ("Kept in", "this app's settings")])
 FIRST_START_CREATE = "Use this folder as the library."
+
+# Languages (window 3.x)
+TO_EMPTY = ("Choose the language this series is translated into. Run, Sample and the terms need it.",
+            [("Applies to", "this series"), ("Changes", "until a block is translated or a term is confirmed")])
+TO_CHOSEN = ("The language this series is translated into. The prompt and the terms use it.",
+             [("Applies to", "this series"), ("Changes", "until a block is translated or a term is confirmed")])
+TO_BUSY = "The language is read when a translation starts. %s Change it after it has ended."
+TO_OTHER_FIELD = ("The language as tag:Name. The tag is its short code, the name is how the translator is told to "
+                  "call it.", [("Format", "tag:Name"), ("Example", "de:German"), ("Tag", "two or three letters")])
+NEED_LANGUAGE = "Choose the language first: To, next to Prompt on the Translate step, or the column heading here."
+TERMS_TO_HEAD = ("The language the terms are translated into. Choose it here or on the Translate step; the "
+                 "renderings in this column depend on it.",
+                 [("Applies to", "this series"), ("Same setting as", "To on Translate")])
+SERIES_NO_LANGUAGE = "No language chosen yet. Choose it with To on the Translate step."

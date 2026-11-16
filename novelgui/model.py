@@ -9,6 +9,7 @@ from __future__ import annotations
 import difflib
 import gc
 import json
+import re
 import threading
 import time
 import zipfile
@@ -27,6 +28,7 @@ from novelcore.terms import FILE_NAME as TERMS_FILE
 from novelcore.terms import TYPES, TermBase, import_glossary
 
 from . import chapterlogic as cl
+from . import langrules
 from .libraryrules import explain_oserror, natural_key
 from .termlogic import PRONOUNS
 
@@ -78,6 +80,7 @@ class SeriesInfo:
     books: tuple
     labels: tuple = ()      # ((volume name, label shown), ...) set by Rename volume
     broken: str = ""        # why the series cannot be opened ("" = fine)
+    chosen: bool = True     # False for a series created by Add book whose language is not chosen yet (3.1)
 
     def label_of(self, stem: str) -> str:
         return dict(self.labels).get(stem) or stem
@@ -105,8 +108,77 @@ def list_series_task(ctx, library) -> list[SeriesInfo]:
         labels = tuple(sorted((str(k), str(v)) for k, v in labels.items() if isinstance(v, str) and v.strip()))             if isinstance(labels, dict) else ()
         books = tuple(sorted(s.book_names(), key=natural_key))
         out.append(SeriesInfo(str(s.settings.get("name") or p.name), str(p), str(s.settings.get("target", "")),
-                              s.target_tag, books, labels))
+                              s.target_tag, books, labels, chosen=s.settings.get("target_chosen") is not False))
     return out
+
+
+# ---------------------------------------------------------------- the language of a series (window 3.1)
+def series_language(info) -> str | None:
+    """The ONE reader of a series' target language: `tag:Name`, or None while the user has not chosen it. A
+    series without the `target_chosen` flag (made before this window, or by the core) counts as chosen."""
+    if info is None or not info.chosen or not info.target:
+        return None
+    return info.target
+
+
+def set_series_language(series_path, target: str) -> None:
+    """The ONE writer: the target and `target_chosen` go into series.json in one atomic write."""
+    tag, _name = split_target(target)
+    if not tag:
+        raise ValueError("no language")
+
+    def put(settings):
+        settings["target"] = target
+        settings["target_chosen"] = True
+    update_series_settings(series_path, put)
+
+
+def with_language(info, target: str):
+    """`info` as the list would read it after `set_series_language(info.path, target)`."""
+    from dataclasses import replace
+    return replace(info, target=target, tag=split_target(target)[0], chosen=True)
+
+
+def language_lock(series_path) -> tuple[bool, bool]:
+    """(a block is translated, a term is confirmed): while either holds, the language cannot change."""
+    root = Path(series_path)
+    translated = False
+    for f in sorted((root / "chapters").glob("*/*.jsonl")):
+        if any(r.get("status") == "ok" for r in read_jsonl(f)):
+            translated = True
+            break
+    confirmed = False
+    tf = root / TERMS_FILE
+    if tf.is_file():
+        try:
+            base = TermBase.load(tf, split_target(str(Series.open(root).settings.get("target", "")))[0] or None)
+            confirmed = any(e.status == "confirmed" for e in base.sorted_entries())
+        except (OSError, ValueError):
+            confirmed = False
+    return translated, confirmed
+
+
+def book_language_tag(book_path) -> str:
+    """The dc:language of an EPUB as a primary tag ("" when it has none or cannot be read)."""
+    try:
+        with zipfile.ZipFile(book_path) as z:
+            cont = z.read("META-INF/container.xml").decode("utf-8", "replace")
+            m = re.search(r'full-path="([^"]+)"', cont)
+            if not m:
+                return ""
+            return langrules.dc_language(z.read(m.group(1)).decode("utf-8", "replace"))
+    except (OSError, KeyError, zipfile.BadZipFile):
+        return ""
+
+
+def source_language(series_path, book: str) -> langrules.SourceLang:
+    """Source language for export names (13.11): the book's dc:language, else the series' source_lang, else
+    Original / src."""
+    try:
+        src = str(Series.open(series_path).settings.get("source_lang") or "")
+    except (FileNotFoundError, ValueError):
+        src = ""
+    return langrules.source_language(book_language_tag(book_file(series_path, book)) if book else "", src)
 
 
 def _broken_reason(folder: Path) -> str:

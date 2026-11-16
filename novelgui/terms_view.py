@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from . import model, termlogic, tips
+from . import accent, langrules, model, termlogic, tips
 from .dialog import message
 from .reader import Reader
 from .step import Step
@@ -127,10 +127,10 @@ class TermsStep(Step):
             "not in the term base yet.", [("Applies to", "selected rows"), ("Key", "N"), ("Undo", "yes, for 6 s")]))
         attach_tip(self.del_btn, tip, lambda e: (
             "Remove the selected terms from the base.", [("Applies to", "selected rows"), ("Undo", "yes, for 6 s")]))
-        attach_tip(self.confirm_btn, tip, lambda e: (
+        attach_tip(self.confirm_btn, tip, lambda e: tips.NEED_LANGUAGE if not self._lang_ok() else (
             "Mark every row shown here as checked. Rows with an open question are skipped; they stay for you "
             "to answer.", [("Applies to", "rows shown in New"), ("Skips", "rows with questions")]))
-        attach_tip(self.import_btn, tip, lambda e: (
+        attach_tip(self.import_btn, tip, lambda e: tips.NEED_LANGUAGE if not self._lang_ok() else (
             "Read your own glossary files, plain JSON with the English term and its translation. The terms "
             "become confirmed; a term that two files translate differently becomes a question.",
             [("Format", "{\"term\": \"translation\"}"), ("Terms become", "confirmed"),
@@ -152,6 +152,7 @@ class TermsStep(Step):
         t.on_edited = self._edited
         t.on_context = self._context_menu
         t.wire_tips()
+        t.on_language = lambda xr, yr: self.app.language_menu(xr, yr, openers=(t.head,))
         t.body.bind("<KeyPress>", self._key_press, add="+")
         ui.root.bind("<Control-f>", lambda e: self._focus_search() if self.winfo_ismapped() else None, add="+")
         ui.root.bind("<Control-z>", self._undo_key, add="+")
@@ -162,12 +163,14 @@ class TermsStep(Step):
 
     # ------------------------------------------------------------- life
     def on_show(self):
+        self._sync_language()
         self._load_if_needed()
         self.reader.reset_book(self.app.series.path if self.app.series else "", self.app.book)
         self._update_selection_state()
         self.after(10, lambda: (self._apply_frac(), self.table.body.focus_set()))
 
     def on_series(self):
+        self._sync_language()
         self._cancel_scan()
         self.fr, self._fr_key, self.next_rows, self.next_n, self._virt = None, None, [], None, {}
         self.dismissed = []
@@ -194,6 +197,36 @@ class TermsStep(Step):
     def shutdown(self):
         self.table.close_edit(commit=True)
 
+    def on_language(self):
+        """The language was chosen or changed: the base is read again for it (its renderings depend on it)."""
+        self.table.close_edit(commit=False)
+        if self._loaded_path is not None and self.doc is not None:
+            self._loaded_path = None
+            self.doc = None
+            self.entries = []
+            self.refilter(keep=set())
+        self._sync_language()
+        if self.winfo_ismapped() or self.app.current == self.key:
+            self._load_if_needed()
+
+    def _lang_ok(self) -> bool:
+        return not self.app.language_pending()
+
+    def _sync_language(self):
+        """Heading `To ▾` (red while nothing is chosen, the one red of the screen) or the language name."""
+        tb = self.table
+        lang = self.app.series_language()
+        tb.language_set = not self.app.language_pending()
+        tb.head_red = accent.gets_accent(accent.LANGUAGE, accent.Facts(bool(self.app.keystore.keys),
+                                                                       tb.language_set, False))
+        tb.cols[1].label = "To  ▾" if not tb.language_set else (model.target_label(lang) if lang else
+                                                                 model.target_label("ru:Russian"))
+        if not tb.language_set and tb.sort_key == "tr":
+            self._set_default_order()
+        tb.draw_head()
+        tb.draw()
+        self._update_chrome()
+
     def _load_if_needed(self):
         s = self.app.series
         if s is None or self._loaded_path == s.path:
@@ -209,7 +242,7 @@ class TermsStep(Step):
             self.doc = doc
             self.marks = model.gender_marks(doc.tag)
             self.table.marks = self.marks
-            self.table.cols[1].label = model.target_label(self.app.series.target or doc.tag)
+            self._sync_language()
             self.entries = doc.entries()
             self.tab = "new"
             self.seg.set_value("new")
@@ -436,7 +469,7 @@ class TermsStep(Step):
         self._settle([entry], pre, old)
 
     def toggle_confirm(self):
-        if self.doc is None or self.busy:
+        if self.doc is None or self.busy or not self._lang_ok():
             return
         sel, pre, old = self._snapshot()
         if not sel:
@@ -452,7 +485,7 @@ class TermsStep(Step):
         self._settle(sel, pre, old)
 
     def confirm_all(self):
-        if self.doc is None or self.busy or self.tab not in ("new", "next"):
+        if self.doc is None or self.busy or not self._lang_ok() or self.tab not in ("new", "next"):
             return
         rows = [t for t in self.table.rows if t.status == "new" and not t.questions and not getattr(t, "cand", False)]
         if not rows:
@@ -544,7 +577,7 @@ class TermsStep(Step):
 
     # ------------------------------------------------------------- import / export
     def import_glossary(self):
-        if self.doc is None or self.busy:
+        if self.doc is None or self.busy or not self._lang_ok():
             return
         files = self.ui.dialogs.open_json_files()
         if not files:
@@ -666,7 +699,7 @@ class TermsStep(Step):
         c = termlogic.counts(self.entries)
         nq = c["questions"]
         n = self.next_n
-        hot = bool(n)
+        hot = bool(n) and self._lang_ok()
         items = [("new", "New", c["new"]), ("known", "Known", c["known"]),
                  ("questions", "Questions", nq, nq > 0 and not hot)]
         if self.fr is not None:
@@ -676,9 +709,9 @@ class TermsStep(Step):
         n = len(self.table.sel)
         self.merge_btn.set_enabled(n >= 2 and not self.busy)
         self.del_btn.set_enabled(n >= 1 and not self.busy)
-        self.confirm_btn.set_enabled(self.tab in ("new", "next") and not self.busy and any(
+        self.confirm_btn.set_enabled(self._lang_ok() and self.tab in ("new", "next") and not self.busy and any(
             t.status == "new" and not t.questions and not getattr(t, "cand", False) for t in self.table.rows))
-        self.import_btn.set_enabled(self.doc is not None and not self.busy)
+        self.import_btn.set_enabled(self.doc is not None and not self.busy and self._lang_ok())
         self.export_btn.set_enabled(self.doc is not None)
 
     def _key_press(self, e):

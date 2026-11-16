@@ -39,6 +39,21 @@ class TermsTable(VTable):
         self.edit = None
         self.sort_key = "count"
         self.sort_desc = True
+        self.language_set = True       # False while the series has no target language: heading `To ▾`, cells `—`
+        self.head_red = False          # the heading carries the one red of the screen
+        self.on_language = None        # (x_root, y_root) when the heading `To ▾` is clicked
+
+    def head_colour(self, col, active):
+        if col.key == "tr" and self.head_red:
+            return ACCENT
+        return super().head_colour(col, active)
+
+    def _head_click(self, e):
+        if not self.language_set and self.col_at(e.x) == "tr" and not self._head_hit_border(e.x):
+            if self.on_language:
+                self.on_language(e.x_root, self.head.winfo_rooty() + self.head.winfo_height())
+            return
+        super()._head_click(e)
 
     # ---- cells
     def draw_cells(self, c, t, cols, y, mid):
@@ -59,7 +74,9 @@ class TermsTable(VTable):
                 c.create_text(x + self.pad + used, y + mid, text=self.fit("= " + ", ".join(t.forms), room),
                               anchor="w", font=f, fill=FAINT)
         x, w = cols["tr"]
-        if "tr" in t.questions:
+        if not self.language_set:
+            self._draw_dash(c, x, y + mid)
+        elif "tr" in t.questions:
             self._draw_question(c, x, y + mid, w, t.tr, BRIGHT)
         else:
             c.create_text(x + self.pad, y + mid, text=self.fit(t.tr, w - 2 * self.pad), anchor="w", font=f,
@@ -117,6 +134,8 @@ class TermsTable(VTable):
         if i is None:
             return None
         t = self.rows[i]
+        if col == "tr" and not self.language_set:
+            return tips.TERMS_TO_HEAD
         field = FIELD_OF.get(col)
         if col in QUESTION_COL.values():
             qf = next((f for f, c in QUESTION_COL.items() if c == col), None)
@@ -144,6 +163,8 @@ class TermsTable(VTable):
         return None
 
     def tip_head(self, e):
+        if not self.language_set and self.col_at(e.x) == "tr":
+            return tips.TERMS_TO_HEAD
         return termtips.head_tip(self.col_at(e.x))
 
     def copy_text(self, rows) -> str:
@@ -186,6 +207,8 @@ class TermsTable(VTable):
 
     def start_edit(self, i, col, bypass=False):
         term = self.rows[i] if 0 <= i < len(self.rows) else None
+        if col == "tr" and not self.language_set:
+            return              # the rendering is written in the target language: choose it first
         self.close_edit(commit=True)
         if term is not None:
             i = self.index_of(term)

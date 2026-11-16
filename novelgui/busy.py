@@ -48,3 +48,9 @@ def library_change_reason(views) -> str:
         if v.foreign or v.state in ("running", "waiting_quota"):
             return "A translation is running or waiting for the daily quota. Stop it first."
     return ""
+
+
+def language_reason(view, extra=()) -> str:
+    """Why the target language of a series cannot be changed now ("" when it can): a job of the series runs, waits
+    for the quota or runs in another window. The queue of a later step comes in through `extra`."""
+    return block_reason(view, (), "", None, extra)

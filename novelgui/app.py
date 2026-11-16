@@ -8,9 +8,9 @@ from pathlib import Path
 from . import busy
 from . import chapterlogic as cl
 from . import libraryrules as rules
-from . import model, platform, selection
+from . import langrules, model, platform, selection, tips
 from .books_view import BooksStep
-from .dialog import confirm, message
+from .dialog import RenameDialog, confirm, message
 from .loadline import LoadLine
 from .settings import Settings, api_base
 from .step import Step
@@ -87,6 +87,7 @@ class App:
         self.prompts = PromptStore(self.settings.folder)
         self.closing = False
         self.panel = None
+        self._lang_reasons: dict = {}   # item of the open language list -> why it is dim
         self.busy_ops: dict = {}    # (series path, volume or None) -> how many operations run on it now
 
         ls = self.fonts.ls
@@ -103,6 +104,7 @@ class App:
         self.summary = tk.Label(head, text="", bg=BG, fg=DIM, font=ui.font, anchor="e")
         self.summary.pack(side="right")
         attach_tip(self.summary, ui.tip, lambda e: self._summary_tip())
+        attach_tip(ui.pick, ui.tip, self._language_tip)
         self.loadline = LoadLine(outer)
         self.loadline.pack(fill="x", pady=(0, int(ls * 0.4)))
         self.host = tk.Frame(outer, bg=BG)
@@ -294,6 +296,100 @@ class App:
             view = None
         return busy.block_reason(view, list(self.busy_ops), series_path, volume,
                                  self.extra_block_reasons(series_path, volume))
+
+    # ------------------------------------------------------------- the target language (window 3.x)
+    def series_language(self):
+        """`tag:Name` of the current series, None while it is not chosen (or there is no series)."""
+        return model.series_language(self.series)
+
+    def language_pending(self) -> bool:
+        """A series is open and its language is not chosen yet."""
+        return self.series is not None and self.series_language() is None
+
+    def language_block_reason(self, series_path: str, view=None) -> str:
+        """Why the language of the series cannot change now: it runs, waits (the queue of a later step comes in
+        through extra_block_reasons). `view` is the JobView the caller already holds."""
+        if view is None:
+            try:
+                view = model.job_view(series_path)
+            except Exception:
+                view = None
+        return busy.language_reason(view, self.extra_block_reasons(series_path))
+
+    def language_menu(self, xr: int, yr: int, openers=()) -> None:
+        """The `To` list at screen position (xr, yr): Russian, Ukrainian, Polish, Other.... Once a block is
+        translated or a term confirmed, every language but the current one is dim, with the reason."""
+        info = self.series
+        if info is None or info.broken:
+            return
+        why = self.language_block_reason(info.path, getattr(self.steps.get("translate"), "view", None))
+        if why:
+            message(self.ui, tips.TO_BUSY % why)
+            return
+        locked = langrules.lock_reason(*model.language_lock(info.path))
+        current = self.series_language()
+        items, disabled = langrules.menu(current, model.TARGETS, bool(locked))
+        labels = {t: langrules.label(t, model.TARGETS) for t in items if t != langrules.OTHER}
+        hints = {}      # a dim row and its tooltip say it all (no explanation words in the list)
+        self._lang_reasons = {i: locked for i in disabled}
+        self._lang_items = list(items)
+        path = info.path
+        root = self.root
+
+        def pick(item, nxt):
+            self._lang_reasons = {}
+            if item == langrules.OTHER:
+                self._other_language(path)
+            else:
+                self.choose_language(path, item)
+        self.ui.pick.show(root, xr - root.winfo_rootx(), yr - root.winfo_rooty(), self.fonts.cw * 24, items,
+                          current or items[0], pick, labels=labels, hints=hints, disabled=disabled,
+                          openers=openers, on_cancel=lambda: setattr(self, "_lang_reasons", {}))
+
+    def _language_tip(self, e):
+        m = self.ui.pick
+        if not m.open or list(m.items) != getattr(self, "_lang_items", None):
+            return None
+        i = m._row(e.y)
+        return self._lang_reasons.get(m.items[i]) if i is not None else None
+
+    def _other_language(self, path: str) -> None:
+        def done(text):
+            try:
+                target = langrules.parse_other(text)
+            except ValueError:
+                return
+            self.choose_language(path, target)
+        dlg = RenameDialog(self.ui, "Language, as tag:Name (for example de:German)", "", langrules.problem_other,
+                           done, button="Use")
+        attach_tip(dlg.field.entry, self.ui.tip, lambda e: tips.TO_OTHER_FIELD)
+
+    def choose_language(self, series_path: str, target: str) -> bool:
+        """Set the language of the series (the only place that does). Refused, with a message, while a job of it
+        runs or waits, and once a block is translated or a term confirmed (unless it is the same language)."""
+        info = self.series
+        if info is None or info.path != series_path or target == self.series_language():
+            return False
+        why = self.language_block_reason(series_path, getattr(self.steps.get("translate"), "view", None))
+        if not why:
+            why = langrules.lock_reason(*model.language_lock(series_path))
+        if why:
+            message(self.ui, why)
+            return False
+        try:
+            model.set_series_language(series_path, target)
+        except (OSError, ValueError) as exc:
+            message(self.ui, "The language could not be saved: %s. It was not changed." % exc)
+            return False
+        new = model.with_language(info, target)
+        books = self.steps.get("books")
+        if books is not None:
+            books.replace_series(new)
+        self.series = new
+        for s in self.steps.values():
+            s.on_language()
+        self.refresh_summary()
+        return True
 
     def release_series(self, series_path: str, then) -> None:
         """Close the books of the series that worker threads keep open (an open zip blocks a move on Windows),
