@@ -4,14 +4,27 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from . import termlogic, termtips
+from . import termlogic, termtips, tips
 from .chapterlogic import display_no
 from .terms_const import FIELD_OF, OTHER, QUESTION_COL, TYPES
 from .theme import ACCENT, BRIGHT, DIM, FAINT, S2, S4, TEXT
 from .vtable import Col, VTable
 
+DASH = "—"
 EDITABLE = ["tr", "type", "gender", "note"]
 GENDER_ORDER = ["male", "female", "neuter", "plural", "unknown"]
+
+
+def empty_type(t) -> bool:
+    return not (t.type or "").strip()
+
+
+def empty_gender(t) -> bool:
+    return (t.gender or "") in ("", "unknown")
+
+
+def empty_note(t) -> bool:
+    return not (t.note or "").strip()
 
 
 class TermsTable(VTable):
@@ -53,13 +66,18 @@ class TermsTable(VTable):
                           fill=BRIGHT)
         x, w = cols["type"]
         if not cand:
-            c.create_text(x + self.pad, y + mid, text=t.type, anchor="w", font=f, fill=DIM)
+            if empty_type(t):
+                self._draw_dash(c, x, y + mid)
+            else:
+                c.create_text(x + self.pad, y + mid, text=t.type, anchor="w", font=f, fill=DIM)
         x, w = cols["gender"]
         mark = self.marks.get(t.gender, "?")
         if cand:
             pass
         elif "gender" in t.questions:
             self._draw_question(c, x, y + mid, w, mark, DIM)
+        elif empty_gender(t):
+            self._draw_dash(c, x, y + mid)
         else:
             c.create_text(x + self.pad, y + mid, text=mark, anchor="w", font=f, fill=DIM)
         x, w = cols["first"]
@@ -69,7 +87,15 @@ class TermsTable(VTable):
         x, w = cols["count"]
         c.create_text(x + w - self.pad, y + mid, text=str(t.count), anchor="e", font=f, fill=DIM if t.count else FAINT)
         x, w = cols["note"]
-        c.create_text(x + self.pad, y + mid, text=self.fit(t.note, w - 2 * self.pad), anchor="w", font=f, fill=FAINT)
+        if empty_note(t) and not cand:
+            self._draw_dash(c, x, y + mid)
+        else:
+            c.create_text(x + self.pad, y + mid, text=self.fit(t.note or "", w - 2 * self.pad), anchor="w", font=f,
+                          fill=FAINT)
+
+    def _draw_dash(self, c, x, ymid):
+        """A value that is not known yet: a dim dash (its tooltip says who fills it in)."""
+        c.create_text(x + self.pad, ymid, text=DASH, anchor="w", font=self.font, fill=FAINT)
 
     def _draw_question(self, c, x, ymid, w, shown, fg):
         """Doubtful value: the value in use followed by an accent '?'."""
@@ -96,6 +122,11 @@ class TermsTable(VTable):
             qf = next((f for f, c in QUESTION_COL.items() if c == col), None)
             if qf in t.questions:
                 return termtips.question_tip(t, qf, self.marks)
+        if not getattr(t, "cand", False) and (
+                (col == "type" and empty_type(t)) or
+                (col == "gender" and empty_gender(t) and "gender" not in t.questions) or
+                (col == "note" and empty_note(t))):
+            return tips.UNKNOWN_FIELD
         if col == "gender":
             word = termtips.GENDER_WORDS.get(t.gender, t.gender)
             return "%s: %s" % (self.marks.get(t.gender, "?"), word)

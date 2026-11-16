@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from . import model, termlogic
+from . import model, termlogic, tips
 from .dialog import message
 from .reader import Reader
 from .step import Step
@@ -57,7 +57,7 @@ class TermsStep(Step):
         self.seg.pack(side="left")
         self.type_btn = Pill(top, "All types  ▾", self._open_types, ui.font)
         self.type_btn.pack(side="right")
-        self.sel_btn = Pill(top, "In selection", self._toggle_selection, ui.font, kind="dim")
+        self.sel_btn = Pill(top, "Selected chapters", self._toggle_selection, ui.font, kind="dim")
         self.sel_btn.pack(side="right", padx=(0, gap // 2))
         self.search = Field(top, ui.font, on_change=self._search_changed, icon=True)
         self.search.pack(side="left", fill="x", expand=True, padx=gap)
@@ -138,8 +138,7 @@ class TermsStep(Step):
         attach_tip(self.export_btn, tip, lambda e: (
             "Save the whole term base to a JSON file.", [("Format", "terms.json"), ("Contains", "every term")]))
         attach_tip(self.sel_btn, tip, lambda e: (
-            "Show only the terms that occur in the chapters selected on the Books step.",
-            [("Chapters", str(len(self.app.selection))), ("Applies to", "the list below")]))
+            tips.SELECTED_CHAPTERS, [("Chapters", str(len(self.app.selection))), ("Applies to", "the list below")]))
         attach_tip(self.type_btn, tip, lambda e: (
             "Show only terms of one type.", [("Types", "character, place, item ...")]))
 

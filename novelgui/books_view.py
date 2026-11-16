@@ -180,7 +180,7 @@ class BooksStep(Step):
         self.book_seg = Segmented(top, ui.font, self._book_picked)
         self.range_caption = tk.Label(top, text="Chapters", bg=BG, fg=DIM, font=ui.font)
         self.range_caption.pack(side="left", padx=(0, self.gap // 2))
-        self.range_field = Field(top, ui.font, on_submit=self._range_typed, width=ui.cw * 22)
+        self.range_field = Field(top, ui.font, on_commit=self._range_typed, width=ui.cw * 22)
         self.range_field.pack(side="left")
         self.range_label = tk.Label(top, text="", bg=BG, fg=DIM, font=ui.font, anchor="w")
         self.range_label.pack(side="left", padx=(self.gap, 0))
@@ -401,22 +401,24 @@ class BooksStep(Step):
         self.app.set_selection(selection.make(self.app.book, idx))
         self.export_btn.set_enabled(model.EXPORT_READY and bool(idx) and not self.exporting)
 
-    def _range_typed(self, text: str):
+    def _range_typed(self, text: str) -> bool:
+        """Apply a typed range. False when it cannot be read: the field goes back to its previous text."""
         text = text.strip()
         if not text:
-            return
+            return True
         if not self.infos or any(i.title is None for i in self.infos):
             self.pending_range = text      # titles are still being read; applied when they are
-            return
+            return True
         numbers = [i.number for i in self.infos]
         toc = [i.is_toc is True for i in self.infos]
         res = cl.select_by_numbers(text, numbers, toc)
         if res.error:
             self.range_label.configure(text=res.error)
-            return
+            return False
         self.table.set_selection(res.indices)
         self.range_label.configure(text=res.note)
         self.range_note = res.note
+        return True
 
     def select_all_chapters(self):
         self.table.select_all()

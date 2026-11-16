@@ -35,10 +35,16 @@ def set_text(t: tk.Text, text: str) -> None:
 class PromptEditor(Modal):
     """Name and text of a prompt. Save stores it in the prompt library and hands (name, text) to `on_save`."""
 
-    def __init__(self, ui, name: str, text: str, taken, on_save):
+    def __init__(self, ui, name: str, text: str, taken, on_save, series: str = ""):
         super().__init__(ui)
         self.on_save = on_save
         self.taken = taken          # callable(name) -> error text or ""
+        self.series = series        # key of the unsaved draft (the series folder); empty = no draft
+        self.orig = (name, text)
+        self._finished = False
+        draft = ui.winstate.prompt_draft(series) if series else None
+        if draft is not None and draft != self.orig:
+            name, text = draft
         f = ui.font
         pad, gap = self.pad, int(ui.ls * 0.6)
         body = self.body
@@ -56,7 +62,7 @@ class PromptEditor(Modal):
         row.pack(fill="x", padx=pad, pady=(gap, 0))
         self.save_btn = Pill(row, "Save", self._save, f, kind="accent", bg=S2)
         self.save_btn.pack(side="right")
-        Pill(row, "Cancel", self.close, f, kind="dim", bg=S2).pack(side="right", padx=(0, gap // 2))
+        Pill(row, "Cancel", self._cancel, f, kind="dim", bg=S2).pack(side="right", padx=(0, gap // 2))
         attach_tip(self.save_btn, ui.tip, lambda e: None if self.save_btn.enabled else (self._err or "Give the prompt a name."))
         attach_tip(self.text, ui.tip, lambda e: (
             "The instructions sent with every request. {language} is replaced by the series language.",
@@ -77,8 +83,27 @@ class PromptEditor(Modal):
         if not self.save_btn.enabled:
             return
         name, text = self.name.get().strip(), self.text.get("1.0", "end-1c")
+        self._finished = True
+        if self.series:
+            self.ui.winstate.clear_prompt_draft(self.series)
         self.close()
         self.on_save(name, text)
+
+    def _cancel(self):
+        """The Cancel button throws the edit away; Esc and a press outside keep it as a draft."""
+        self._finished = True
+        if self.series:
+            self.ui.winstate.clear_prompt_draft(self.series)
+        self.close()
+
+    def close(self):
+        if self.is_open and not self._finished and self.series:
+            cur = (self.name.get(), self.text.get("1.0", "end-1c"))
+            if cur != self.orig:
+                self.ui.winstate.set_prompt_draft(self.series, *cur)
+            else:
+                self.ui.winstate.clear_prompt_draft(self.series)
+        super().close()
 
 
 # ---------------------------------------------------------------- sample panes

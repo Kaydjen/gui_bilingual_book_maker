@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from . import keystore, model
+from . import keystore, model, tips
 from .dialog import Modal
 from .settings import DEFAULT_MODEL, old_data_dir
 from .theme import BG, BRIGHT, DIM, FAINT, S1, S2, S4, TEXT
@@ -44,10 +44,12 @@ class SettingsPanel(Modal):
         width = ui.cw * 56
 
         def label(text):
-            tk.Label(body, text=text, bg=S2, fg=DIM, font=f, anchor="w").pack(anchor="w", padx=pad, pady=(gap, 2))
+            lab = tk.Label(body, text=text, bg=S2, fg=DIM, font=f, anchor="w")
+            lab.pack(anchor="w", padx=pad, pady=(gap, 2))
+            return lab
 
         # keys
-        label("Keys")
+        keys_label = label("Keys")
         self.keys = _List(body, ui, keystore.mask)
         self.keys.body.configure(width=width, height=int(ui.ls * 5.2))
         self.keys.pack(fill="x", padx=pad)
@@ -59,7 +61,7 @@ class SettingsPanel(Modal):
         self.remove_btn = Pill(row, "Remove", self._remove_keys, f, kind="dim", bg=S2)
         self.remove_btn.pack(side="left")
         self.import_btn = Pill(row, "Import keys from the old app", self._import_keys, f, kind="dim", bg=S2)
-        label("Add keys")
+        paste_label = label("Add keys")
         self.paste = dark_text(body, ui, height=3, editable=True, bg=S1)
         self.paste.pack(fill="x", padx=pad)
         self.paste.bind("<KeyRelease>", lambda e: self._update())
@@ -67,18 +69,22 @@ class SettingsPanel(Modal):
         arow.pack(fill="x", padx=pad, pady=(gap // 2, 0))
         self.add_btn = Pill(arow, "Add", self._add_keys, f, bg=S2)
         self.add_btn.pack(side="left")
-        attach_tip(self.paste, ui.tip, lambda e: (
+        paste_tip = lambda e: (
             "Paste one key, or several, one per line, and press Add. Text that is not a key is left out.",
-            [("Stored in", "the app data folder"), ("Shown as", "dots and the last 4 characters")]))
-        attach_tip(self.keys, ui.tip, lambda e: (
+            [("Stored in", "the app data folder"), ("Shown as", "dots and the last 4 characters")])
+        keys_tip = lambda e: (
             "Your API keys. Each key from a separate Google project brings its own daily quota. A key is never "
-            "shown in full.", [("Stored in", "keys.json"), ("Never", "in a series or a log")]))
+            "shown in full.", [("Stored in", "keys.json"), ("Never", "in a series or a log")])
+        attach_tip(self.paste, ui.tip, paste_tip)
+        attach_tip(paste_label, ui.tip, paste_tip)
+        attach_tip(self.keys, ui.tip, keys_tip)
+        attach_tip(keys_label, ui.tip, keys_tip)
         attach_tip(self.import_btn, ui.tip, lambda e: (
             "Copy the keys of the earlier app. They are not shown; the earlier app keeps its own copy.",
             [("Offered", "only while this app has no keys")]))
 
         # models
-        label("Models")
+        models_label = label("Models")
         self.mlist = _List(body, ui, lambda m: m)
         self.mlist.body.configure(width=width, height=int(ui.ls * 3.2))
         self.mlist.pack(fill="x", padx=pad)
@@ -94,36 +100,42 @@ class SettingsPanel(Modal):
         self.model_up.pack(side="left", padx=(gap // 2, 0))
         self.model_del = Pill(mrow, "Remove", self._remove_model, f, kind="dim", bg=S2)
         self.model_del.pack(side="left", padx=(gap // 2, 0))
-        attach_tip(self.mlist, ui.tip, lambda e: (
+        models_tip = lambda e: (
             "The models to translate with, in order of preference. The first one is used until its quota is gone.",
-            [("Default", DEFAULT_MODEL), ("Order", "top is used first")]))
+            [("Default", DEFAULT_MODEL), ("Order", "top is used first")])
+        attach_tip(self.mlist, ui.tip, models_tip)
+        attach_tip(models_label, ui.tip, models_tip)
 
         # pace
-        label("Pace")
+        pace_label = label("Pace")
         prow = tk.Frame(body, bg=S2)
         prow.pack(fill="x", padx=pad)
-        self.pace = Field(prow, f, on_submit=lambda s: self._commit_pace(), bg=S2, width=ui.cw * 8, surface=S1)
+        self.pace = Field(prow, f, on_commit=self._commit_pace, bg=S2, width=ui.cw * 8, surface=S1)
         self.pace.pack(side="left")
-        self.pace.entry.bind("<FocusOut>", lambda e: self._commit_pace(), add="+")
         cur = self.settings.get("pace")
         self.pace.set(str(int(cur)) if isinstance(cur, (int, float)) and not isinstance(cur, bool)
                       else str(model.default_pace()))
-        attach_tip(self.pace.entry, ui.tip, lambda e: (
+        pace_tip = lambda e: (
             "Requests a minute in total. One even rate is used for all keys together, because the service answers "
             "'too many requests' for the whole computer, not per key; more keys add daily quota, not speed.",
-            [("Range", "1 to 120"), ("Default", str(model.default_pace())), ("Applies to", "every key")]))
+            [("Range", "1 to 120"), ("Default", str(model.default_pace())), ("Applies to", "every key")])
+        attach_tip(self.pace.entry, ui.tip, pace_tip)
+        attach_tip(pace_label, ui.tip, pace_tip)
 
         # keep awake
         krow = tk.Frame(body, bg=S2)
         krow.pack(fill="x", padx=pad, pady=(gap, 0))
-        tk.Label(krow, text="Keep awake while translating", bg=S2, fg=DIM, font=f).pack(side="left", padx=(0, gap))
+        awake_label = tk.Label(krow, text=tips.KEEP_AWAKE_LABEL, bg=S2, fg=DIM, font=f)
+        awake_label.pack(side="left", padx=(0, gap))
         self.awake = Segmented(krow, f, self._awake_picked, bg=S2)
         self.awake.set_items([("off", "Off", None), ("on", "On", None)],
                              "on" if self.settings.get("keep_awake") else "off")
         self.awake.pack(side="left")
-        attach_tip(self.awake, ui.tip, lambda e: (
+        awake_tip = lambda e: (
             "Stop the computer from going to sleep while a translation runs. It is released when the run ends.",
-            [("Default", "off"), ("Only while", "a job runs")]))
+            [("Default", "off"), ("Only while", "a job runs")])
+        attach_tip(self.awake, ui.tip, awake_tip)
+        attach_tip(awake_label, ui.tip, awake_tip)
 
         close = tk.Frame(body, bg=S2)
         close.pack(fill="x", padx=pad, pady=(gap, 0))
@@ -200,19 +212,23 @@ class SettingsPanel(Modal):
                 self.mlist.select_index(i - 1)
 
     # ------------------------------------------------------------- pace, awake
-    def _commit_pace(self):
-        text = self.pace.get().strip()
+    def _commit_pace(self, text=None):
+        """Take the typed pace. False (the field goes back to the stored value and flashes) when it is not a
+        number from 1 to 120."""
+        text = (self.pace.get() if text is None else text).strip()
         try:
             p = model.clean_pace(text)
         except ValueError:
-            cur = self.settings.get("pace")
-            self.pace.set(str(int(cur)) if isinstance(cur, (int, float)) else str(model.default_pace()))
-            return
+            return False
         self.settings.set("pace", None if p is None else (int(p) if p == int(p) else p))
+        self.pace.set(str(int(p)) if p is not None and p == int(p) else (str(p) if p is not None
+                                                                          else str(model.default_pace())))
         self.app.keys_changed()
+        return True
 
     def close(self):
-        self._commit_pace()
+        if self.is_open:
+            self.pace.commit()
         super().close()
 
     def _awake_picked(self, key):

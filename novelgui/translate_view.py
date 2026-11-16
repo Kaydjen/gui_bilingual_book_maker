@@ -250,7 +250,7 @@ class TranslateStep(Step):
             self._sync_settings()
 
         del existing
-        PromptEditor(self.ui, name, text, taken, saved)
+        PromptEditor(self.ui, name, text, taken, saved, series=s.path)
 
     # ------------------------------------------------------------- state -> controls
     def _selection_indices(self) -> list:

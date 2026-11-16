@@ -14,7 +14,7 @@ from .keystore import KeyStore, PromptStore
 from .settings_view import SettingsPanel, model_list
 from .terms_view import TermsStep
 from .translate_view import TranslateStep
-from .theme import BG, DIM, Fonts, style_ttk
+from .theme import BG, BRIGHT, DIM, Fonts, style_ttk
 from .tooltip import attach_tip
 from .ui import UI
 from .widgets import Segmented, install_clipboard
@@ -37,11 +37,15 @@ class Gear(tk.Canvas):
         self.hover = v
         self.draw()
 
+    def colour(self) -> str:
+        """Brighter on hover, never darker than the background."""
+        return BRIGHT if self.hover else DIM
+
     def draw(self):
         import math
         self.delete("all")
         c = self.size / 2
-        fg = BRIGHT if self.hover else DIM
+        fg = self.colour()
         r_out, r_in = c * 0.82, c * 0.56
         for k in range(8):
             a = k * math.pi / 4
@@ -262,6 +266,7 @@ class App:
             return
         self.closing = True
         try:
+            self.ui.panels.close_all()          # an open prompt editor keeps its draft
             for s in self.steps.values():
                 s.shutdown()
             geo = self.root.geometry()
