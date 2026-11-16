@@ -405,9 +405,11 @@ class App:
         self.refresh_context()
 
     def show_problems(self, position: int | None = None) -> None:
-        """The `1 problem` link of Export: the problem list of Translate at that chapter. Hook: the list gets its
-        jump target in a later step; for now Translate opens."""
+        """The `1 problem` link of Export: the problem list of Translate, landing on the first row of that chapter."""
         self.show_step("translate")
+        tr = self.steps.get("translate")
+        if tr is not None and hasattr(tr, "show_problem_at"):
+            tr.show_problem_at(position)
 
     # ------------------------------------------------------------- settings, keys
     def models(self) -> list:

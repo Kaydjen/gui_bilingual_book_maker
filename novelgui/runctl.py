@@ -158,9 +158,11 @@ class RunControl:
             return None
 
     # ------------------------------------------------------------- the one start path (13.2)
-    def start(self, series_path: str, book: str, chapters, resume: bool = False, source: str = "user") -> str:
+    def start(self, series_path: str, book: str, chapters, resume: bool = False, source: str = "user",
+              retry=()) -> str:
         """Start or continue the job of a series. Returns "" when it started, else the reason in plain words.
-        Refuses while a job (or a sample) of this window runs."""
+        Refuses while a job (or a sample) of this window runs. `retry`: check findings to translate again; the
+        core marks them here, at the real start, not before."""
         if self.run is not None:
             return "A translation is running. Only one runs at a time."
         info = model.read_series(series_path)
@@ -196,7 +198,7 @@ class RunControl:
         self.sched.user_started()
         self.app.runs_changed(starting=True)
         self.ui.worker.submit(
-            lambda ctx, h=run.handle: model.run_task(ctx, h, series_path, book, chapters, cfg, resume),
+            lambda ctx, h=run.handle: model.run_task(ctx, h, series_path, book, chapters, cfg, resume, tuple(retry)),
             on_item=lambda item, r=run: self._on_item(r, item),
             on_result=lambda res, r=run: self._done(r, res),
             on_error=lambda exc, r=run: self._failed(r, exc), lane="run")
@@ -416,7 +418,8 @@ class RunControl:
             return
         why = self._item_problem(item)
         if not why:
-            why = self.start(item.series, item.book, item.indices(), resume=item.resume, source="queue")
+            why = self.start(item.series, item.book, item.indices(), resume=item.resume, source="queue",
+                             retry=item.retry)
         if why:
             self.sched.halt("Stopped", why)
             self.last_start_error = why

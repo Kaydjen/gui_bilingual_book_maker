@@ -21,6 +21,8 @@ class Item:
     resume: bool = False        # continue the recorded job of the series instead of starting these chapters
     replace: bool = False       # the user confirmed replacing the series' unfinished job when queueing
     reach: str = ""             # the chapters as the list showed them when it was queued (`2697-2750`)
+    retry: tuple = ()           # check findings to translate again: (chapter, block, source hash, text digest);
+                                # the core marks them only when the item really starts (window_spec 13.1)
 
     def indices(self) -> list:
         out: list = []
@@ -30,7 +32,8 @@ class Item:
 
     def to_dict(self) -> dict:
         return {"series": self.series, "book": self.book, "spans": [[a, b] for a, b in self.spans],
-                "resume": self.resume, "replace": self.replace, "reach": self.reach}
+                "resume": self.resume, "replace": self.replace, "reach": self.reach,
+                "retry": [list(m) for m in self.retry]}
 
 
 def spans_of(indices) -> tuple:
@@ -57,8 +60,13 @@ def item_from(d) -> Item | None:
             return None
         clean.append((p[0], p[1]))
     reach = d.get("reach")
+    marks = []
+    for m in d.get("retry") if isinstance(d.get("retry"), list) else []:
+        if (isinstance(m, (list, tuple)) and len(m) == 4 and isinstance(m[0], int) and isinstance(m[1], int)
+                and isinstance(m[2], str) and isinstance(m[3], str)):
+            marks.append((m[0], m[1], m[2], m[3]))
     return Item(series, book, tuple(clean), d.get("resume") is True, d.get("replace") is True,
-                reach if isinstance(reach, str) else "")
+                reach if isinstance(reach, str) else "", tuple(marks))
 
 
 class Queue:

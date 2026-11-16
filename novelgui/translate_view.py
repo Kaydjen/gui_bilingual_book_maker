@@ -51,6 +51,8 @@ class TranslateStep(Step):
         self.terms_now = None
         self.problems: list = []
         self.problems_token = None
+        self.checking = ""                  # series folder of a running check, "" = none
+        self._jump = None                   # chapter the problem list should land on once it is loaded
         self.sample_info = None             # (series, book, chapter, blocks) of the sample shown
         self.sample_unrev = 0
         self.samples: dict = {}             # series folder -> (sample_info, unreviewed) kept until the next Sample
@@ -135,6 +137,9 @@ class TranslateStep(Step):
         self.sample_n = Field(act, f, width=ui.cw * 6)
         self.sample_n.set("50")
         self.sample_n.pack(side="left", padx=(gap // 2, 0))
+        self.check_btn = Pill(act, "Check", self._check_clicked, f, kind="dim")
+        self.check_btn.pack(side="left", padx=(gap, 0))
+        attach_tip(self.check_btn, ui.tip, lambda e: self._check_tip())
         attach_tip(self.main_btn, ui.tip, lambda e: self._main_tip())
         attach_tip(self.review_btn, ui.tip, lambda e: tips.fill(tips.REVIEW_TERMS, self.start.review))
         attach_tip(self.sample_btn, ui.tip, lambda e: self._sample_tip())
@@ -147,7 +152,8 @@ class TranslateStep(Step):
         self.sample = SamplePanel(self.content, ui, self._close_sample)
         self.running_table = RunningTable(self.content, ui)
         self.running_table.wire_tips()
-        self.problems_panel = ProblemsPanel(self.content, ui, self._retry, self._keep, self._save_typed)
+        self.problems_panel = ProblemsPanel(self.content, ui, self._retry, self._keep, self._save_typed,
+                                           self._ignore)
 
         self._tick_job = self.after(500, self._tick)
         self._update_controls()
@@ -444,7 +450,7 @@ class TranslateStep(Step):
         z = self.zone = zonestate.zone1(self._zone_facts())
         st = self.start = startlabel.choose(self._start_facts())
         r = self._run_here()
-        nprob = len(self.problems)
+        nprob = sum(1 for p in self.problems if not p.is_finding)       # findings are never the red thing
         # one red (window 1.7): keys, language, blocked first chapter, then the screen's own next thing
         cand = ""
         if z.visible and z.second == "review" and z.review_n:
@@ -531,6 +537,7 @@ class TranslateStep(Step):
         self.to_btn.set_enabled(self.app.series is not None and not self._language_busy() and not locked_foreign)
         self.per_seg.set_enabled(self.app.series is not None and not mine and not locked_foreign)
         self.problems_panel.set_enabled(not mine and not locked_foreign and self._has_keys())
+        self.check_btn.set_enabled(not self.checking and bool(self._checkable()) and not mine and not locked_foreign)
         self.problems_panel.set_accent(top == "problems")
         self.queue_list.refresh()
         self._show_content()
@@ -633,13 +640,14 @@ class TranslateStep(Step):
                     lambda: self._go_queue(s.path, self.app.book, idx, reach, replace=True),
                     valid=lambda: self.view.unfinished)
 
-    def _go_start(self, path: str, book: str, chapters) -> None:
-        why = self.runs.start(path, book, chapters)
+    def _go_start(self, path: str, book: str, chapters, retry=()) -> None:
+        why = self.runs.start(path, book, chapters, retry=retry)
         if why:
             message(self.ui, why)
 
-    def _go_queue(self, path: str, book: str, chapters, reach: str, replace: bool, resume: bool = False) -> None:
-        item = jobqueue.Item(path, book, jobqueue.spans_of(chapters), resume, replace, reach)
+    def _go_queue(self, path: str, book: str, chapters, reach: str, replace: bool, resume: bool = False,
+                  retry=()) -> None:
+        item = jobqueue.Item(path, book, jobqueue.spans_of(chapters), resume, replace, reach, tuple(retry))
         old = self.runs.queued(path)
 
         def put():
@@ -969,7 +977,7 @@ class TranslateStep(Step):
             return
         chapters = self._problem_chapters()
         book = self.view.book or self.app.book
-        if not chapters or not book:
+        if not book:
             self._set_problems([])
             return
         path = s.path
@@ -982,20 +990,122 @@ class TranslateStep(Step):
         self.problems = list(rows)
         self.problems_panel.set_problems(self.problems)
         self._update_controls()
+        if self._jump is not None and self.problems:
+            self._land(self._jump)
+        self._jump = None
+
+    def show_problem_at(self, chapter) -> None:
+        """Export's `1 problem` link: the list lands on the first row of that chapter (the list is loaded again so
+        that it is current)."""
+        self._jump = chapter
+        self._load_problems()
+
+    def _land(self, chapter) -> None:
+        rows = self.problems
+        k = next((i for i, p in enumerate(rows) if p.chapter == chapter), None)
+        if k is None and chapter is not None:
+            k = next((i for i, p in enumerate(rows) if p.chapter >= chapter), None)
+        if k is None:
+            return
+        self._show_content()
+        self.update_idletasks()
+        t = self.problems_panel.table
+        t.select_index(k)
+        t.ensure_visible(k)
+        t.draw()
 
     def _retry(self, rows):
-        """Translate failed blocks again: the chapters that hold them go through the same start rules as the start
-        button (a job that runs makes it a queue item)."""
+        """Translate blocks again: failed blocks and check findings go through the same start rules as the start
+        button (window_spec 13.1, 13.2). A job that runs makes it a queue item; an unfinished job of this series on
+        other chapters makes it a replace that asks first. The core marks findings only when the job really
+        starts, so the chapters stay in Export while it waits."""
         s = self.app.series
         if not rows or s is None or self._run_here() is not None or self.view.foreign or not self._has_keys():
             return
+        findings = [p for p in rows if p.is_finding]
+        if findings and len(findings) != len(rows):
+            return                                       # failed blocks and findings are separate runs
+        marks = tuple(p.mark() for p in findings)
         chapters = sorted({p.chapter for p in rows})
         book = self.view.book or self.app.book
+        path = s.path
         reach = header.range_text(self.app.infos, chapters) if book == self.app.book else ""
-        if self.runs.job_running or self.runs.quota_wait() is not None:
-            self._go_queue(s.path, book, chapters, reach, replace=self.view.unfinished)
+        v = self.view
+        conflict = v.unfinished and set(v.chapters) != set(chapters)
+        busy = self.runs.job_running or self.runs.quota_wait() is not None
+
+        def go():
+            if busy:
+                self._go_queue(path, book, chapters, reach, replace=conflict, retry=marks)
+            else:
+                self._go_start(path, book, chapters, retry=marks)
+        if not conflict:
+            go()
+        elif busy:
+            confirm(self.ui, "Queue chapters %s of %s. When they start, the unfinished job of this series is "
+                    "replaced; translated chapters stay translated." % (reach or "of the problems", s.name), "Queue",
+                    go, valid=lambda: self.view.unfinished)
         else:
-            self._go_start(s.path, book, chapters)
+            confirm(self.ui, "Replace the unfinished job of %s with chapters %s? Translated chapters stay "
+                    "translated." % (s.name, reach or "of the problems"), "Replace", go,
+                    valid=lambda: self.view.unfinished)
+
+    def _ignore(self, rows):
+        s = self.app.series
+        if not rows or s is None:
+            return
+        path, book = s.path, self.view.book or self.app.book
+        self.ui.worker.submit(lambda ctx: model.ignore_task(ctx, path, book, rows),
+                              on_result=lambda n: self._resolved() if self._path() == path else None,
+                              on_error=lambda e: message(self.ui, "The choice could not be saved: %s" % e),
+                              lane="bulk")
+
+    # ------------------------------------------------------------- the check (7.10)
+    def _checkable(self) -> list:
+        """Chapters of the selection that have translated blocks."""
+        infos = self.app.infos
+        return [i for i in self._selection_indices() if 0 <= i < len(infos) and infos[i].done > 0
+                and infos[i].is_toc is not True]
+
+    def _check_tip(self):
+        if self.checking:
+            return "The check is reading the translated chapters."
+        return ("Look for suspicious translations in the chosen chapters: text left in the source language, a "
+                "length far off its chapter, terms not rendered as confirmed, broken markers. Findings are listed "
+                "with the failed blocks; nothing is changed.",
+                [("Applies to", "chosen chapters with translated blocks"), ("Uses", "no requests")])
+
+    def _check_clicked(self):
+        s = self.app.series
+        chapters = self._checkable()
+        if s is None or not chapters or self.checking or self._run_here() is not None:
+            return
+        path, book = s.path, self.app.book
+        reach = header.range_text(self.app.infos, chapters)
+        self.checking = path
+        self.check_btn.set_text("Check 0/%d" % len(chapters))
+
+        def progress(item):
+            if item[0] == "check" and self.checking == path:
+                self.check_btn.set_text("Check %d/%d" % (item[1], item[2]))
+
+        def done(res):
+            self.checking = ""
+            self.check_btn.set_text("Check")
+            if self._path() == path:
+                self._load_problems()
+                if not res["findings"] and not res["cancelled"]:
+                    message(self.ui, "The check found nothing suspicious in chapters %s." % reach)
+            self._update_controls()
+
+        def failed(exc):
+            self.checking = ""
+            self.check_btn.set_text("Check")
+            self._update_controls()
+            message(self.ui, "The check stopped on an error: %s" % exc)
+        self.ui.worker.submit(lambda ctx: model.check_task(ctx, path, book, chapters), on_item=progress,
+                              on_result=done, on_error=failed, lane="bulk")
+        self._update_controls()
 
     def _keep(self, rows):
         self._resolve(rows, "keep", "")

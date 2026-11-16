@@ -607,13 +607,15 @@ import inspect  # noqa: E402
 import os  # noqa: E402
 
 from novelcore import frontier as core_frontier  # noqa: E402
+from novelcore import checks as core_checks  # noqa: E402
 from novelcore import job as core_job  # noqa: E402
 from novelcore.pool import (DEFAULT_PACE, PACE_MAX, PACE_MIN, day_return, key_hash, read_day_exhausted,  # noqa: E402
                             read_day_usage)
 from novelcore.run import Runner, from_ranges  # noqa: E402
 from novelcore.store import ChapterLog  # noqa: E402
 
-from .jobstate import JobView, assemble_problems, kept_record, manual_record  # noqa: E402
+from . import findingrules  # noqa: E402
+from .jobstate import JobView, Problem, assemble_problems, kept_record, manual_record  # noqa: E402
 
 # Free-tier requests per key and day by model (AI Studio figure of 2026-11-13). Unknown model: None.
 DAILY_LIMITS = {"gemini-3.1-flash-lite": 500}
@@ -728,9 +730,12 @@ def make_gate(ctx, handle, series: Series, book: str):
     return fr.check_chapter
 
 
-def run_task(ctx, handle: RunHandle, series_path, book: str, chapters, cfg: RunConfig, resume: bool = False):
+def run_task(ctx, handle: RunHandle, series_path, book: str, chapters, cfg: RunConfig, resume: bool = False,
+             retry=()):
     """Start a job (or continue the recorded one) and relay its events; returns the run summary.
-    Emits ("event", Event), ("scan", done, total), ("busy", message)."""
+    `retry`: marks (chapter, block, source hash, text digest) of check findings; the core marks exactly the ones
+    that still describe the block and a job over their chapters follows (checks.retry, called only here, at the
+    real start). Emits ("event", Event), ("scan", done, total), ("busy", message)."""
     series = Series.open(series_path)
     try:
         try:
@@ -742,6 +747,11 @@ def run_task(ctx, handle: RunHandle, series_path, book: str, chapters, cfg: RunC
                 kw["gate"] = gate
             if resume:
                 job = core_job.resume(series, cfg.keys, cfg.models, **kw)
+            elif retry:
+                marks = fresh_marks(series, book, retry)
+                if not marks:
+                    raise core_job.JobError("These blocks changed since the check: nothing to translate again.")
+                job = core_checks.retry(series, book, marks, cfg.keys, cfg.models, **kw)
             elif HAS_CHAPTERS:
                 job = core_job.Job(series, book, cfg.keys, cfg.models, chapters=list(chapters), **kw)
             else:
@@ -809,7 +819,8 @@ def sample_rows(series_path, book: str, chapter: int, n: int) -> list:
 
 # ---------------------------------------------------------------- failed blocks
 def problems_task(ctx, series_path, book: str, chapters) -> list:
-    """Failed blocks of the given chapters (latest record of the block is not ok)."""
+    """Failed blocks of the given chapters (latest record of the block is not ok) and the check findings of the
+    volume that still describe their block and are not ignored."""
     series = Series.open(series_path)
     out = []
     with series.open_book(book) as b:
@@ -823,7 +834,75 @@ def problems_task(ctx, series_path, book: str, chapters) -> list:
             log = ChapterLog(path)
             blocks = [(blk.index, blk.sha, " ".join(strip_markers(blk.text).split())) for blk in b.blocks(ch)]
             out.extend(assemble_problems(i, ch.title or "", blocks, log.lookup))
+        if not ctx.cancelled:
+            out.extend(finding_rows(series, b, book))
+    return sorted(out, key=lambda p: (p.chapter, p.block, p.kind != "failed"))
+
+
+def finding_rows(series, b, book: str) -> list:
+    """Problem rows of the saved check report of a volume (see check_task), minus ignored and outdated ones."""
+    rep = core_checks.Report.load(series, book)
+    if rep is None:
+        return []
+    ignored = findingrules.load_ignored(series.path, book)
+    logs: dict = {}
+    out = []
+    for idx, cr in sorted(rep.chapters.items()):
+        if not 0 <= idx < len(b.chapters):
+            continue
+        for f in cr.findings:
+            tkey = findingrules.text_key(f.text)
+            if findingrules.entry_key(f.chapter, f.block, f.src_sha, f.kind, tkey) in ignored:
+                continue
+            log = logs.get(idx)
+            if log is None:
+                log = logs[idx] = ChapterLog(series.chapter_log(book, b.chapters[idx]).path)
+            if not findingrules.still_true(log.lookup(f.block, f.src_sha), tkey):
+                continue
+            out.append(Problem(f.chapter, f.title or b.chapters[idx].title or "", f.block, f.src_sha,
+                               " ".join(strip_markers(f.source).split()), findingrules.label(f.kind), f.kind,
+                               f.text, tkey, findingrules.detail_text(f.kind, f.detail)))
     return out
+
+
+def fresh_marks(series, book: str, marks) -> list:
+    """The retry marks whose block still has the translation the finding was made on: a block typed over,
+    kept or retranslated since the check is left alone. Returns (chapter, block, source hash) tuples."""
+    out = []
+    with series.open_book(book) as b:
+        for c, i, sha, tkey in marks:
+            if not 0 <= c < len(b.chapters):
+                continue
+            log = ChapterLog(series.chapter_log(book, b.chapters[c]).path)
+            if findingrules.still_true(log.lookup(i, sha), tkey):
+                out.append((c, i, sha))
+    return out
+
+
+def check_task(ctx, series_path, book: str, chapters) -> dict:
+    """Run the core's checks over `chapters` of a volume and save the result in the series (the earlier results of
+    other chapters stay). Emits ("check", done, total). Returns {"findings": n, "chapters": n, "cancelled": bool}."""
+    series = Series.open(series_path)
+    rep = core_checks.check_range(series, book, list(chapters), progress=lambda d, t, i: ctx.emit(("check", d, t)),
+                                  cancel=lambda: ctx.cancelled)
+    old = core_checks.Report.load(series, book)
+    if old is not None:
+        for i, cr in rep.chapters.items():
+            old.chapters[i] = cr
+        old.created = rep.created
+        old.target = rep.target
+        rep_all = old
+    else:
+        rep_all = rep
+    rep_all.cancelled = rep.cancelled
+    rep_all.save(series)
+    return {"findings": sum(len(c.findings) for c in rep.chapters.values()), "chapters": len(rep.chapters),
+            "cancelled": rep.cancelled}
+
+
+def ignore_task(ctx, series_path, book: str, rows) -> int:
+    """Remember findings as ignored (they stay hidden until the block's translation changes)."""
+    return findingrules.add_ignored(series_path, book, [(p.chapter, p.block, p.sha, p.kind, p.tkey) for p in rows])
 
 
 def resolve_problems_task(ctx, series_path, book: str, problems, action: str, typed: str = "") -> int:
