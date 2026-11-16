@@ -28,7 +28,7 @@ from novelcore.terms import FILE_NAME as TERMS_FILE
 from novelcore.terms import TYPES, TermBase, import_glossary
 
 from . import chapterlogic as cl
-from . import langrules
+from . import langrules, pieces
 from .libraryrules import explain_oserror, natural_key
 from .termlogic import PRONOUNS
 
@@ -406,6 +406,13 @@ def export_selection(series_path, book: str, indices, mode: str, out_path=None) 
 
 def export_task(ctx, series_path, book: str, indices, mode: str) -> ExportOutcome:
     return export_selection(series_path, book, indices, mode)
+
+
+def export_piece_task(ctx, series_path, book: str, positions, mode: str, name: str) -> ExportOutcome:
+    """Export chapters of one volume into `<series>/out/` under `name`; a taken name gets ` (2)`, ` (3)` ...
+    (never overwritten, window_spec 8.4). The core writes a temporary file and renames it at the end."""
+    out_dir = Path(series_path) / "out"
+    return export_selection(series_path, book, positions, mode, out_path=pieces.unique_path(out_dir, name))
 
 
 # ---------------------------------------------------------------- terms
@@ -917,6 +924,16 @@ def next_items(fr, indices) -> list:
                            blocking=gate or a[1] != core_frontier.KIND_CANDIDATE) for a in acc.values()]
     out.sort(key=lambda it: (not it.blocking, it.first, -it.count, it.text.lower()))
     return out
+
+
+def first_blocked(fr, indices) -> bool:
+    """True when the first chapter of the selection has an unreviewed item that holds the job back (the
+    translation cannot start at all). Needs a scanned frontier."""
+    idx = sorted(indices)
+    if not idx or not frontier_ready(fr):
+        return False
+    gate = gate_candidates()
+    return any(gate or it.kind != core_frontier.KIND_CANDIDATE for it in fr.unreviewed(idx[0], candidates=True))
 
 
 def _doc_add_confirmed(self, source: str, tr: str, count: int = 0, first=None):

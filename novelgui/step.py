@@ -36,6 +36,9 @@ class Step(tk.Frame):
     def on_selection(self) -> None:
         """The chapter selection changed."""
 
+    def on_infos(self) -> None:
+        """The chapter states of the open volume changed (scan batch, running job)."""
+
     def on_language(self) -> None:
         """The target language of the current series was chosen or changed."""
 

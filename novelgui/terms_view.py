@@ -109,7 +109,7 @@ class TermsStep(Step):
         self.not_btn = Pill(foot, "Not a term", self.dismiss_candidates, ui.font)
         self.import_btn = Pill(foot, "Import", self.import_glossary, ui.font, kind="dim")
         self.export_btn = Pill(foot, "Export", self.export_base, ui.font, kind="dim")
-        self.confirm_btn = Pill(foot, "Confirm all", self.confirm_all, ui.font, kind="accent")
+        self.confirm_btn = Pill(foot, "Confirm all", self.confirm_all, ui.font)
         self.confirm_btn.pack(side="right")
         self.merge_btn.pack(side="left")
         self.del_btn.pack(side="left", padx=(gap // 2, 0))
@@ -180,8 +180,7 @@ class TermsStep(Step):
         self.trash = []
         self._hide_undo()
         self.refilter()
-        if self.winfo_ismapped() or self.app.current == self.key:
-            self._load_if_needed()
+        self._load_if_needed()      # also while another step is shown: the header counts the terms (1.2)
 
     def on_book(self):
         self._ensure_frontier()
@@ -206,8 +205,7 @@ class TermsStep(Step):
             self.entries = []
             self.refilter(keep=set())
         self._sync_language()
-        if self.winfo_ismapped() or self.app.current == self.key:
-            self._load_if_needed()
+        self._load_if_needed()
 
     def _lang_ok(self) -> bool:
         return not self.app.language_pending()
@@ -217,8 +215,7 @@ class TermsStep(Step):
         tb = self.table
         lang = self.app.series_language()
         tb.language_set = not self.app.language_pending()
-        tb.head_red = accent.gets_accent(accent.LANGUAGE, accent.Facts(bool(self.app.keystore.keys),
-                                                                       tb.language_set, False))
+        tb.head_red = accent.gets_accent(accent.LANGUAGE, self.app.accent_facts("terms"))
         tb.cols[1].label = "To  ▾" if not tb.language_set else (model.target_label(lang) if lang else
                                                                  model.target_label("ru:Russian"))
         if not tb.language_set and tb.sort_key == "tr":
@@ -229,8 +226,12 @@ class TermsStep(Step):
 
     def _load_if_needed(self):
         s = self.app.series
-        if s is None or self._loaded_path == s.path:
+        if s is None:
             return
+        if self._loaded_path == s.path:
+            if self.busy or self.doc is None or self.doc.tag == s.tag:
+                return
+            self.doc, self.entries = None, []       # the tag of the series changed behind our back: read again
         self._loaded_path = s.path
         path, tag = s.path, s.tag
         self.busy = True
@@ -239,6 +240,8 @@ class TermsStep(Step):
             self.busy = False
             if self._loaded_path != path:
                 return
+            self._cancel_scan()
+            self.fr, self._fr_key, self._virt = None, None, {}      # a frontier belongs to one base: a new doc, a new one
             self.doc = doc
             self.marks = model.gender_marks(doc.tag)
             self.table.marks = self.marks
@@ -699,11 +702,10 @@ class TermsStep(Step):
         c = termlogic.counts(self.entries)
         nq = c["questions"]
         n = self.next_n
-        hot = bool(n) and self._lang_ok()
-        items = [("new", "New", c["new"]), ("known", "Known", c["known"]),
-                 ("questions", "Questions", nq, nq > 0 and not hot)]
+        # the red of this screen is `Terms N` in the header path or Confirm all (accent.py); counts stay dim
+        items = [("new", "New", c["new"]), ("known", "Known", c["known"]), ("questions", "Questions", nq)]
         if self.fr is not None:
-            items.insert(0, ("next", "Next", n, hot, self.next_extra if self.next_extra else None))
+            items.insert(0, ("next", "Next", n, False, self.next_extra if self.next_extra else None))
         self.seg.set_items(items, self.tab)
         self.not_btn.set_enabled(any(getattr(t, "cand", False) for t in self.table.selected_rows()))
         n = len(self.table.sel)
@@ -711,6 +713,11 @@ class TermsStep(Step):
         self.del_btn.set_enabled(n >= 1 and not self.busy)
         self.confirm_btn.set_enabled(self._lang_ok() and self.tab in ("new", "next") and not self.busy and any(
             t.status == "new" and not t.questions and not getattr(t, "cand", False) for t in self.table.rows))
+        red = self.confirm_btn.enabled and accent.gets_accent("confirm", self.app.accent_facts("terms"), "confirm")
+        kind = "accent" if red else "plain"
+        if self.confirm_btn.kind != kind:
+            self.confirm_btn.kind = kind
+            self.confirm_btn.draw()
         self.import_btn.set_enabled(self.doc is not None and not self.busy and self._lang_ok())
         self.export_btn.set_enabled(self.doc is not None)
 
@@ -801,6 +808,7 @@ class TermsStep(Step):
         """Cheap: the answer is derived from the cached scan; no book is read."""
         if self.doc is None or not model.frontier_ready(self.fr):
             self.next_rows, self.next_n, self.next_extra = [], None, 0
+            self.app.set_terms_state(None, False)
             return
         rows = []
         blocking = 0
@@ -820,6 +828,7 @@ class TermsStep(Step):
             blocking += 1 if it.blocking else 0
             rows.append(e)
         self.next_rows, self.next_n, self.next_extra = rows, blocking, len(rows) - blocking
+        self.app.set_terms_state(blocking, model.first_blocked(self.fr, self.scope()))
 
     def dismiss_candidates(self):
         """Not a term: the selected mined names never hold back translation again."""

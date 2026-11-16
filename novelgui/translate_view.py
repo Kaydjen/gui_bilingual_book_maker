@@ -531,6 +531,7 @@ class TranslateStep(Step):
                 infos[i].done, infos[i].failed = min(d, t), fl
                 infos[i].log_sig = (-1, -1)
         b.table.refresh()
+        self.app.infos_updated()
 
     # ------------------------------------------------------------- running
     def _config(self):

@@ -65,7 +65,7 @@ class TermsTable(VTable):
                       fill=DIM if getattr(t, "suggest", False) else TEXT)
         used = f.measure(s)
         if "same_as" in t.questions:
-            c.create_text(x + self.pad + used, y + mid, text=" ?", anchor="w", font=f, fill=ACCENT)
+            c.create_text(x + self.pad + used, y + mid, text=" ?", anchor="w", font=f, fill=BRIGHT)
             used += f.measure(" ?")
         if t.forms:
             used += self.cw
@@ -115,7 +115,7 @@ class TermsTable(VTable):
         c.create_text(x + self.pad, ymid, text=DASH, anchor="w", font=self.font, fill=FAINT)
 
     def _draw_question(self, c, x, ymid, w, shown, fg):
-        """Doubtful value: the value in use followed by an accent '?'."""
+        """Doubtful value: the value in use followed by a bright '?' (a marker of the data, not the screen's red)."""
         f = self.font
         avail = w - 2 * self.pad
         q = f.measure(" ?")
@@ -123,7 +123,7 @@ class TermsTable(VTable):
         x0 = x + self.pad
         if s:
             c.create_text(x0, ymid, text=s, anchor="w", font=f, fill=fg)
-        c.create_text(x0 + f.measure(s), ymid, text=" ?" if s else "?", anchor="w", font=f, fill=ACCENT)
+        c.create_text(x0 + f.measure(s), ymid, text=" ?" if s else "?", anchor="w", font=f, fill=BRIGHT)
 
     # ---- tooltips
     def tip_body(self, e):

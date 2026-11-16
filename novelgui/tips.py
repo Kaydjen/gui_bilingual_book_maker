@@ -64,3 +64,39 @@ TERMS_TO_HEAD = ("The language the terms are translated into. Choose it here or 
                  "renderings in this column depend on it.",
                  [("Applies to", "this series"), ("Same setting as", "To on Translate")])
 SERIES_NO_LANGUAGE = "No language chosen yet. Choose it with To on the Translate step."
+
+# Header: the path and the context line (window 1.1-1.4)
+PATH_BOOKS = ("Choose the series, the volume and the chapters to work on.", [("Step", "1 of 4")])
+PATH_TERMS = ("Check the names and terms of the chosen chapters before translating.",
+              [("Step", "2 of 4"), ("Number", "terms still to review")])
+PATH_TERMS_N = ("%d terms of the chosen chapters are not reviewed yet. %s",
+                [("Step", "2 of 4"), ("Number", "terms still to review")])
+PATH_TERMS_RED = "Translation cannot start: the first chosen chapter has terms to review."
+PATH_TERMS_DIM = "Translation can start; the later chapters stop at the first one that has terms to review."
+PATH_TRANSLATE = ("Run the translation of the chosen chapters.", [("Step", "3 of 4")])
+PATH_EXPORT = ("Write the translated chapters of the volume into an EPUB file.", [("Step", "4 of 4")])
+CONTEXT_LINE = ("What the next steps work on: series, volume, chosen chapters and the language. Click to go to "
+                "Books and change it.", [("Chapters", "numbers from the titles"), ("Click", "opens Books")])
+
+# Export (window 8)
+EXPORT_PIECE = ("Chapters that are translated one after another. Click to put its range into the fields below.",
+                [("Counts", "fully translated chapters"), ("Updated", "while a translation runs")])
+EXPORT_PROBLEM = ("Some blocks of these chapters failed. The chapters with failed blocks are left out of the "
+                  "file until they are solved. Click to see them on Translate.",
+                  [("Opens", "Translate"), ("Left out", "chapters with failed blocks")])
+EXPORT_FROM = ("The first chapter of the file, as the number printed in its title (the position when a title has "
+               "no number). Only fully translated chapters between the two numbers are written.",
+               [("Format", "a number"), ("Default", "the piece you click")])
+EXPORT_TO = ("The last chapter of the file, as the number printed in its title. Only fully translated chapters "
+             "between the two numbers are written.", [("Format", "a number"), ("Default", "the piece you click")])
+EXPORT_SINGLE = ("Write the translation only: the original text is replaced. The file goes to the out folder of "
+                 "the series; an existing file is never overwritten.",
+                 [("Folder", "out, in the series"), ("Name", "series, chapters, language")])
+EXPORT_BILINGUAL = ("Write each original paragraph with its translation next to it. The file goes to the out "
+                    "folder of the series; an existing file is never overwritten.",
+                    [("Folder", "out, in the series"), ("Name", "series, chapters, languages")])
+EXPORT_NEED_PAIR = "Type a range that has fully translated chapters, or click a piece in the list."
+EXPORT_RUNNING = "An export of this volume is in progress."
+EXPORT_LAST = ("The file written last. Click to show it in its folder.", [("Folder", "out, in the series")])
+EXPORT_LEFT_OUT = ("Chapters of the range that are not fully translated yet are not in the file: %s.",
+                   [("Left out", "not fully translated")])

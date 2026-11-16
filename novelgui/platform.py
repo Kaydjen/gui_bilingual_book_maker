@@ -137,6 +137,23 @@ def open_folder(path) -> bool:
         return False
 
 
+def reveal_file(path) -> bool:
+    """Show a file in the file manager with the file selected (Linux: its folder)."""
+    import subprocess
+    from pathlib import Path
+    p = Path(path)
+    try:
+        if IS_WINDOWS:
+            subprocess.Popen(["explorer", "/select,%s" % p])
+            return True
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", str(p)])
+            return True
+    except Exception:
+        return False
+    return open_folder(p.parent)
+
+
 def keep_awake(on: bool) -> None:
     """Ask Windows not to sleep while a translation runs (cleared with on=False). No-op elsewhere.
     The request belongs to the calling thread, so call it from the window's thread both times."""

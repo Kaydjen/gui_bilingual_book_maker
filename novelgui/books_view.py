@@ -236,32 +236,6 @@ class BooksStep(Step):
         self.table.on_view = self._viewed
         self.table.wire_tips()
         self.table.on_context = None
-        foot = tk.Frame(right, bg=BG)
-        foot.pack(fill="x", pady=(self.gap, 0))
-        self.export_btn = Pill(foot, "Export", self.export, ui.font)
-        self.export_btn.pack(side="right")
-        self.export_btn.set_enabled(False)
-        self.mode_seg = Segmented(foot, ui.font, self._mode_picked)
-        modes = [(k, label, None) for k, label in model.EXPORT_MODES]
-        saved = ui.settings.get("export_mode")
-        self.export_mode = saved if saved in dict(model.EXPORT_MODES) else "single"
-        self.mode_seg.set_items(modes, self.export_mode)
-        self.mode_seg.pack(side="right", padx=(0, self.gap // 2))
-        self.result = tk.Label(foot, text="", bg=BG, fg=DIM, font=ui.font, anchor="w", cursor="arrow")
-        self.result.pack(side="left")
-        self.skipped_note = tk.Label(foot, text="", bg=BG, fg=DIM, font=ui.font, anchor="w")
-        self.skipped_note.pack(side="left", padx=(self.gap, 0))
-        self.outcome = None
-        self.exporting = False
-        self.result.bind("<Button-1>", lambda e: self._open_out())
-        attach_tip(self.result, ui.tip, lambda e: self._result_tip())
-        attach_tip(self.mode_seg, ui.tip, lambda e: (
-            "Translation replaces the original text. Bilingual puts the translation next to each original paragraph.",
-            [("Remembered", "yes")]))
-        attach_tip(self.export_btn, ui.tip, lambda e: (
-            "Write the selected, fully translated chapters to an EPUB file. Chapters that are not fully "
-            "translated are left out. It also works while a translation runs.",
-            [("Needs", "selected chapters"), ("Skips", "untranslated chapters"), ("Folder", "out, in the series")]))
         attach_tip(ui.menu, ui.tip, self._menu_tip)
         self.status_ok = False
         self._last_view = (-1, -1)
@@ -692,6 +666,7 @@ class BooksStep(Step):
                 self.t_filled = time.perf_counter() - self.t_open
             self.table.refresh()
             self.app.refresh_summary()
+            self.app.infos_updated()
 
     def _restore_selection(self, book):
         """The chapters chosen on this volume last time (4.5)."""
@@ -716,6 +691,7 @@ class BooksStep(Step):
         self.scan_info = dict(res, elapsed=time.perf_counter() - self.t_open)
         self.table.refresh()
         self.app.refresh_summary()
+        self.app.infos_updated()
         if self.pending_range:
             text, self.pending_range = self.pending_range, ""
             self._range_typed(text)
@@ -735,7 +711,6 @@ class BooksStep(Step):
             return
         idx = self.table.selected_indices()
         self.app.set_selection(selection.make(self.app.book, idx))
-        self.export_btn.set_enabled(model.EXPORT_READY and bool(idx) and not self.exporting)
         if self._sel_book and self._sel_book == self.app.book and self.app.series is not None:
             self.ui.winstate.set_volume_selection(self.app.series.path, self.app.book,
                                                   selection.make(self.app.book, idx).spans())
@@ -811,65 +786,6 @@ class BooksStep(Step):
 
         self._run_op(lambda ctx: libraryops.add_book(lib, res["epub"], res["mode"], series_path, res.get("name", "")),
                      done, series_path, None)
-
-    # ------------------------------------------------------------- export
-    def _mode_picked(self, key):
-        self.export_mode = key
-        self.ui.settings.set("export_mode", key)
-
-    def export(self):
-        sel = self.app.selection
-        if not sel or not self.app.series or self.exporting:
-            return
-        self.exporting = True
-        self.export_btn.set_enabled(False)
-        sp, book, idx, mode = self.app.series.path, sel.book, list(sel.indices), self.export_mode
-        self.app.op_begin(sp, book)
-
-        def done(out):
-            self.app.op_end(sp, book)
-            self.exporting = False
-            self._table_changed()
-            self._show_outcome(out)
-
-        def failed(exc):
-            self.app.op_end(sp, book)
-            self.exporting = False
-            self._table_changed()
-            message(self.ui, "The export failed: %s" % exc)
-
-        self.ui.worker.submit(lambda ctx: model.export_task(ctx, sp, book, idx, mode), on_result=done,
-                              on_error=failed, lane="bulk")
-
-    def _show_outcome(self, out):
-        self.outcome = out
-        if out.nothing:
-            self.result.configure(text="Nothing translated in the selection", fg=DIM, cursor="arrow")
-            self.skipped_note.configure(text="")
-            return
-        self.result.configure(text=out.name, fg=TEXT, cursor="hand2", font=self.ui.font)
-        n = len(out.skipped)
-        self.skipped_note.configure(text="%d skipped" % n if n else "")
-
-    def _result_tip(self):
-        out = self.outcome
-        if out is None:
-            return None
-        if out.nothing:
-            return ("No selected chapter is fully translated, so no file was written.",
-                    [("Detail", out.detail[:60] or "-")])
-        return ("Click to open the folder with the file.",
-                [("Kept", "%d chapters" % out.kept), ("Skipped", "%d chapters" % len(out.skipped)),
-                 ("Size", _size(out.size)), ("Problems", str(len(out.problems)))])
-
-    def _open_out(self):
-        out = self.outcome
-        if out is not None and not out.nothing and out.folder:
-            platform.open_folder(out.folder)
-
-
-def _size(n: int) -> str:
-    return "%.1f MB" % (n / 1e6) if n >= 1e6 else "%d KB" % max(1, round(n / 1e3))
 
 
 def _short(s: str, n: int) -> str:

@@ -8,20 +8,22 @@ from pathlib import Path
 from . import busy
 from . import chapterlogic as cl
 from . import libraryrules as rules
-from . import langrules, model, platform, selection, tips
+from . import accent, header, langrules, model, platform, selection, tips
 from .books_view import BooksStep
+from .export_view import ExportStep
 from .dialog import RenameDialog, confirm, message
 from .loadline import LoadLine
+from .pathbar import PathBar
 from .settings import Settings, api_base
 from .step import Step
 from .keystore import KeyStore, PromptStore
 from .settings_view import SettingsPanel, model_list
 from .terms_view import TermsStep
 from .translate_view import TranslateStep
-from .theme import BG, BRIGHT, DIM, Fonts, style_ttk
+from .theme import BG, BRIGHT, DIM, TEXT, Fonts, style_ttk
 from .tooltip import attach_tip
 from .ui import UI
-from .widgets import Segmented, install_clipboard
+from .widgets import install_clipboard
 
 DEFAULT_TITLE = "Novel"
 
@@ -89,6 +91,9 @@ class App:
         self.panel = None
         self._lang_reasons: dict = {}   # item of the open language list -> why it is dim
         self.busy_ops: dict = {}    # (series path, volume or None) -> how many operations run on it now
+        self._infos_job = None
+        self.terms_n = None         # unreviewed terms of the selection that hold the job back (None = not known)
+        self.terms_first_blocked = False    # the first chosen chapter has such a term: translation cannot start
 
         ls = self.fonts.ls
         pad_x, pad_y = int(ls * 1.1), int(ls * 0.9)
@@ -96,7 +101,8 @@ class App:
         outer.pack(fill="both", expand=True, padx=pad_x, pady=pad_y)
         head = tk.Frame(outer, bg=BG)
         head.pack(fill="x", pady=(0, int(ls * 0.8)))
-        self.switch = Segmented(head, ui.font, self.show_step)
+        self.head = head
+        self.switch = PathBar(head, ui.font, self.show_step)
         self.switch.pack(side="left")
         self.gear = Gear(head, int(ls * 1.25), self.open_settings)
         self.gear.pack(side="right", padx=(pad_x, 0))
@@ -105,6 +111,18 @@ class App:
         self.summary.pack(side="right")
         attach_tip(self.summary, ui.tip, lambda e: self._summary_tip())
         attach_tip(ui.pick, ui.tip, self._language_tip)
+        attach_tip(self.switch, ui.tip, self._path_tip)
+        # the context line: next to the path, or on a second row when the header is crowded (1.4)
+        self.context = tk.Label(outer, text="", bg=BG, fg=DIM, font=ui.font, anchor="w", cursor="hand2")
+        self.context.pack(side="left", padx=(pad_x, 0))
+        self.context.bind("<Button-1>", lambda e: self.show_step("books"))
+        self.context.bind("<Enter>", lambda e: self.context.configure(fg=TEXT))
+        self.context.bind("<Leave>", lambda e: self.context.configure(fg=DIM))
+        attach_tip(self.context, ui.tip, lambda e: tips.CONTEXT_LINE if self.context.cget("text") else None)
+        self.head2 = tk.Frame(outer, bg=BG)
+        self.context_row = 1
+        self._context_text = ""
+        head.bind("<Configure>", lambda e: self._layout_header())
         self.loadline = LoadLine(outer)
         self.loadline.pack(fill="x", pady=(0, int(ls * 0.4)))
         self.host = tk.Frame(outer, bg=BG)
@@ -113,6 +131,7 @@ class App:
         self.register_step(BooksStep)
         self.register_step(TermsStep)
         self.register_step(TranslateStep)
+        self.register_step(ExportStep)
 
         for i, key in enumerate(self.order, 1):
             root.bind("<Control-Key-%d>" % i, lambda e, k=key: self.show_step(k))
@@ -152,17 +171,152 @@ class App:
         self.steps[key].on_show()
         self.settings.set("step", key)
 
-    def refresh_dot(self) -> None:
-        """The step switch; the Translate tab carries a small dot while a job of the series is unfinished."""
+    # ------------------------------------------------------------- the header path (1.1, 1.2)
+    def accent_facts(self, screen: str | None = None) -> accent.Facts:
+        """What the one-red priority needs to know on `screen` (default: the visible one). An element that
+        does not exist on a screen cannot hold the red there: `Add keys` and `To` live on Translate (and `To`
+        in the Terms heading), so the keys fact counts only on Translate and the language fact on Translate
+        and Terms."""
+        screen = screen or self.current
+        keys = bool(self.keystore.keys) or screen != "translate"
+        lang = not self.language_pending() or screen not in ("translate", "terms")
+        return accent.Facts(keys, lang, self.terms_first_blocked)
+
+    def set_terms_state(self, n, first_blocked: bool) -> None:
+        """The Terms step reports the unreviewed terms of the selection (None = not known) and whether the
+        first chosen chapter is blocked by them."""
+        first_blocked = bool(first_blocked) and bool(n)
+        if n == self.terms_n and first_blocked == self.terms_first_blocked:
+            return
+        self.terms_n, self.terms_first_blocked = n, first_blocked
+        self.refresh_path()
+        exp = self.steps.get("export")
+        if exp is not None:
+            exp._update_buttons()
+        terms = self.steps.get("terms")
+        if terms is not None and hasattr(terms, "_update_chrome"):
+            terms._update_chrome()
+
+    def terms_red(self) -> bool:
+        """`Terms N` of the path is the red of the screen: the first chosen chapter is blocked, nothing of a
+        higher priority is open, and the screen has no element of its own for it (Translate has)."""
+        if not self.terms_n or self.current == "translate":
+            return False
+        return accent.gets_accent(accent.TERMS, self.accent_facts())
+
+    def translate_indicator(self):
+        """What follows `Translate` in the path: (text or None, lit). A job of the series that is unfinished or
+        running lights a dot while another step is shown. The running-job indicator of the Translate step
+        (`> series . 62 %`, queue count, wait / terms / stopped) is plugged in here, in this one method."""
         tr = self.steps.get("translate")
         unfinished = bool(tr is not None and (tr.view.unfinished or tr.running))
+        return None, unfinished and self.current != "translate"
+
+    def path_items(self) -> list:
         items = []
         for k in self.order:
-            if k == "translate" and unfinished and self.current != "translate":
-                items.append((k, self.steps[k].label, None, self.current == "books"))
+            step = self.steps[k]
+            if k == "terms":
+                n = self.terms_n if self.terms_n else None
+                items.append((k, step.label, n, bool(n) and self.terms_red()))
+            elif k == "translate":
+                text, lit = self.translate_indicator()
+                items.append((k, step.label, text, lit))
             else:
-                items.append((k, self.steps[k].label, None))
-        self.switch.set_items(items, self.current or None)
+                items.append((k, step.label, None, False))
+        return items
+
+    def refresh_path(self) -> None:
+        self.switch.set_items(self.path_items(), self.current or None)
+        self._layout_header()
+
+    refresh_dot = refresh_path
+
+    def _path_tip(self, e):
+        i = self.switch.seg_at(e.x)
+        if i is None:
+            return None
+        key = self.switch.items[i][0]
+        if key == "books":
+            return tips.PATH_BOOKS
+        if key == "terms":
+            n = self.terms_n
+            if not n:
+                return tips.PATH_TERMS
+            why = tips.PATH_TERMS_RED if self.terms_first_blocked else tips.PATH_TERMS_DIM
+            return tips.PATH_TERMS_N[0] % (n, why), tips.PATH_TERMS_N[1]
+        if key == "translate":
+            return tips.PATH_TRANSLATE
+        return tips.PATH_EXPORT
+
+    # ------------------------------------------------------------- the context line (1.3, 1.4)
+    def context_text(self) -> str:
+        info = self.series
+        if info is None:
+            return ""
+        vol = info.label_of(self.book) if self.book else ""
+        sel = self.selection
+        chapters = header.chapters_text(self.infos, sel.indices) if sel and sel.book == self.book else ""
+        lang = self.series_language()
+        return header.context_line(info.name, vol, chapters, langrules.label(lang, model.TARGETS) if lang else "")
+
+    def refresh_context(self) -> None:
+        self._context_text = self.context_text()
+        self._layout_header()
+
+    def _layout_header(self) -> None:
+        """Put the context line next to the path, or on a second row when the header cannot hold it."""
+        if not hasattr(self, "context"):
+            return
+        f = self.ui.font
+        text = self._context_text
+        gap = int(self.fonts.ls * 1.1)
+        avail = self.head.winfo_width()
+        if avail <= 1:
+            avail = self.root.winfo_width() - 2 * gap
+        side = self.gear.size + self.summary.winfo_reqwidth() + 2 * gap
+        ctx_w = f.measure(text) if text else 0
+        second = header.crowded(self.switch.width_needed(), ctx_w, side, avail, gap)
+        want = 2 if second else 1
+        if want != self.context_row:
+            self.context_row = want
+            self.context.pack_forget()
+            if want == 2:
+                self.head2.pack(fill="x", after=self.head, pady=(0, int(self.fonts.ls * 0.5)))
+                self.context.pack(in_=self.head2, side="left", padx=(gap // 2, 0))
+            else:
+                self.head2.pack_forget()
+                self.context.pack(in_=self.head, side="left", padx=(gap, 0), after=self.switch)
+        self.context.tkraise()          # it is packed into a frame that is not its parent: keep it on top
+        room = (avail if want == 2 else max(60, avail - self.switch.width_needed() - side - 2 * gap)) - gap
+        shown = self._fit(text, room)
+        if self.context.cget("text") != shown:
+            self.context.configure(text=shown)
+
+    def _fit(self, text: str, width: int) -> str:
+        f = self.ui.font
+        if not text or f.measure(text) <= width:
+            return text
+        while text and f.measure(text + "…") > width:
+            text = text[:-1]
+        return text.rstrip(" ·") + "…"
+
+    def infos_updated(self) -> None:
+        """The chapter states of the open volume changed (a scan batch, a running job): steps that show them hear
+        about it, at most about seven times a second (a scan of 4000 chapters sends many batches)."""
+        if self._infos_job is None:
+            self._infos_job = self.root.after(150, self._infos_now)
+
+    def _infos_now(self) -> None:
+        self._infos_job = None
+        for st in self.steps.values():
+            st.on_infos()
+        self.refresh_context()
+
+    def show_problems(self, position: int | None = None) -> None:
+        """The `1 problem` link of Export: the problem list of Translate at that chapter. Hook: the list gets its
+        jump target in a later step; for now Translate opens."""
+        self.show_step("translate")
 
     # ------------------------------------------------------------- settings, keys
     def models(self) -> list:
@@ -454,6 +608,7 @@ class App:
             text = selection.summary(sel, n, b, complete)
         if self.summary.cget("text") != text:
             self.summary.configure(text=text)
+        self.refresh_context()
 
     def _summary_tip(self):
         sel = self.selection
