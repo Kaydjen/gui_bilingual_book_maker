@@ -107,8 +107,9 @@ class PathBar(tk.Canvas):
             tx = a + self.pad
             self.create_text(tx, cy, text=label, anchor="w", font=f, fill=fg)
             if cnt is not None:
+                bright = len(rest) > 1 and bool(rest[1])        # a running job: seen from every step
                 self.create_text(tx + wl + int(self.pad * 0.45), cy, text=str(cnt), anchor="w", font=f,
-                                 fill=ACCENT if hot else (DIM if active else FAINT))
+                                 fill=ACCENT if hot else (TEXT if bright else (DIM if active else FAINT)))
             elif hot:
                 r = self.h * 0.07
                 cx = tx + wl + int(self.pad * 0.3) + r + 1

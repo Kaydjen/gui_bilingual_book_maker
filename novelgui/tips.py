@@ -100,3 +100,110 @@ EXPORT_RUNNING = "An export of this volume is in progress."
 EXPORT_LAST = ("The file written last. Click to show it in its folder.", [("Folder", "out, in the series")])
 EXPORT_LEFT_OUT = ("Chapters of the range that are not fully translated yet are not in the file: %s.",
                    [("Left out", "not fully translated")])
+
+# Translate: the top row (window 7.1, 7.12, 13.1)
+PER_REQUEST = ("How many blocks travel in one request. More blocks per request mean fewer requests of the daily "
+               "quota; every block is checked on its own either way.",
+               [("Choices", "1, 5 or 10"), ("Applies to", "this series"), ("Changes", "at once")])
+PER_REQUEST_LOCKED = ("Blocks per request is read when a translation starts. While this series is translated it "
+                      "cannot change; the new value applies from the next start (Stop, then Continue).",
+                      [("Applies from", "the next start"), ("Now", "locked")])
+PROMPT_LIVE = ("The instructions the translator gets with every request. A prompt saved while a translation runs "
+               "applies from the next chapter.", [("Applies to", "this series"), ("Saved in", "the series folder")])
+
+# Translate: zone 2, the start button (window 7.3)
+START_TRANSLATE = ("Translate the chosen chapters in order. It stops at the first chapter with terms that are not "
+                   "reviewed yet.", [("Chapters", "%s"), ("Starts", "now")])
+START_QUEUE = ("Another translation is running, so these chapters wait in the queue and start when it ends. "
+               "The prompt, blocks per request and language are the series' values at that moment.",
+               [("Chapters", "%s"), ("Starts", "after the running job")])
+START_QUEUE_QUOTA = ("The daily quota of the keys is used up until %s. A new job would only meet it, so these "
+                     "chapters wait in the queue.", [("Quota returns", "%s"), ("Chapters", "%s")])
+START_REPLACE = ("This series has an unfinished job on other chapters. Starting these chapters replaces it; "
+                 "translated chapters are kept.", [("Chapters", "%s"), ("Replaces", "the unfinished job")])
+START_QUEUE_REPLACE = ("This series has an unfinished job on other chapters and another job runs. These chapters "
+                       "wait in the queue and replace the unfinished job when they start; translated chapters "
+                       "are kept.", [("Chapters", "%s"), ("Replaces", "the unfinished job")])
+START_DONE = "Every block of the chosen chapters is translated already."
+START_SAMPLE_RUNS = "A sample is being translated. Start after it has ended."
+START_ELSEWHERE = "Another program is working on this series. Wait for it to finish."
+START_NEED_SELECTION = "Choose chapters on the Books step first."
+ADD_KEYS = "Add an API key in the settings to translate."
+REVIEW_TERMS = ("Chapters are translated only up to the first one with terms that are not reviewed. Open the Terms "
+                "step on these terms.", [("Opens", "Terms, Next"), ("Terms", "%d")])
+
+# Translate: zone 1, the job of this series (window 7.6, 7.7)
+Z1_STOP = ("Finish the requests in flight, record them and stop. Nothing is lost; Continue picks up where it "
+           "stopped. A waiting queue stops too.", [("Saved", "every finished block")])
+Z1_CONTINUE = ("Continue the unfinished job: same book, same chapters. Translated blocks are skipped.",
+               [("Chapters", "%s"), ("Done", "%s")])
+Z1_QUEUE_CONTINUE = ("Another translation is running. This job continues after it, from the queue.",
+                     [("Chapters", "%s"), ("Starts", "after the running job")])
+Z1_WAIT_QUOTA = ("The daily quota of every key is used up. The job continues after the quota returns%s.",
+                 [("Returns at", "%s"), ("Saved", "yes")])
+Z1_WAIT_QUOTA_AUTO = " by itself while this window stays open"
+Z1_WAIT_TERMS = ("Chapters are translated only when every term in them is reviewed. Review the terms, then "
+                 "continue.", [("Next step", "Terms")])
+Z1_STOP_WAIT = ("Cancel the automatic continue. The job becomes stopped and the queue stops; Continue starts it "
+                "by hand.", [("Job", "stopped")])
+Z1_SETTINGS = ("The key or the model was refused. Fix it in the settings; Continue then tries again.",
+               [("Opens", "Settings")])
+Z1_MORE = ("Actions for this job.", [("Discard job", "forget the unfinished job, keep the translated chapters")])
+Z1_DISCARD_CONFIRM = ("Discard the unfinished job of %s? Chapters that are translated stay translated; the job "
+                      "record is closed and Continue is gone.")
+Z1_NO_KEYS = "Add an API key in the settings to continue."
+Z1_ELSEWHERE = "Another program is working on this series. Wait for it to finish."
+CHIP_FAILED = ("%s. Fix the cause, then Continue tries again.", [("Next", "Continue")])
+CHIP_RETRYING = ("A request failed and is being repeated after a pause. It goes on by itself.", [("Next", "automatic")])
+
+# Translate: the queue (window 7.5)
+QUEUE_RUNNING = ("The translation that runs now. Stop ends it and stops the queue.", [("Series", "%s")])
+QUEUE_ITEM = ("Starts when the running job ends, with the series' own prompt, blocks per request and language at "
+              "that moment.", [("Prompt", "%s"), ("Per request", "%s"), ("Language", "%s")])
+QUEUE_REMOVE = "Remove this item from the queue. Nothing of the series changes."
+QUEUE_MORE = ("Move this item up or down the queue.", [("Order", "first runs first")])
+QUEUE_CONTINUE = ("Start the queue from its first item. Nothing starts by itself after the program was opened or a "
+                  "translation was stopped.", [("Starts", "the first item")])
+QUEUE_STATE = "%s"
+QUEUE_REPLACE_CONFIRM = ("%s is queued already. Replace its item with the new chapters?")
+
+# Header: the Translate indicator (window 1.2, 11.5)
+IND_RUNNING = ("The running translation. Click to open its series on the Translate step.",
+               [("Series", "%s"), ("Volume", "%s"), ("Chapters", "%s"), ("Model", "%s"), ("Keys", "%s"),
+                ("Pace", "%s")])
+IND_WAIT = ("The daily quota of every key is used up. The job continues after it returns.",
+            [("Returns at", "%s"), ("Series", "%s")])
+IND_TERMS = ("The job stopped at a chapter whose terms are not reviewed. Click to open its series.",
+             [("Series", "%s"), ("Next step", "Terms")])
+IND_STOPPED = ("The translation is stopped. Click to open its series; Continue picks up where it stopped.",
+               [("Series", "%s")])
+IND_FAILED = ("The translation stopped on an error. Click to open its series.", [("Series", "%s")])
+IND_QUEUE = ("Items wait in the queue. Nothing starts by itself after the program was opened.",
+             [("Queued", "%s")])
+
+# Sample (window 7.13)
+SAMPLE = ("Translate the first blocks of the first chosen chapter to see how it reads. Nothing is added to the "
+          "book.", [("Blocks", "the number on the right"), ("Uses", "requests of today"), ("Saved", "no")])
+SAMPLE_UNREVIEWED = ("Terms of this chapter are not reviewed yet, so names and terms in the sample may differ from "
+                     "the real translation.", [("Unreviewed", "%d"), ("Uses", "requests of today")])
+SAMPLE_BUSY = "A translation runs or waits for the daily quota. A sample uses the same keys; try after it."
+SAMPLE_STOP = "Stop the sample. Nothing of it is part of the book."
+
+# One app window (window 10.9)
+ALREADY_OPEN = "Novel is already open. It was brought to the front."
+
+
+def fill(tip, *values):
+    """A tooltip whose `%s` / `%d` marks (in the text first, then in the fact values, in order) are replaced by
+    `values`. A plain string or a two-part tuple both work."""
+    import re
+    vals = list(values)
+    mark = re.compile(r"%[sd]")
+
+    def sub(s):
+        return mark.sub(lambda m: str(vals.pop(0)) if vals else "", s)
+    if isinstance(tip, str):
+        return sub(tip)
+    text, facts = tip
+    text = sub(text)
+    return text, [(name, sub(v)) for name, v in facts]

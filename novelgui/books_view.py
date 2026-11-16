@@ -320,6 +320,15 @@ class BooksStep(Step):
         self.ui.worker.submit(lambda ctx: model.list_series_task(ctx, lib), on_result=done, on_error=failed,
                               lane="bulk")
 
+    def open_series_path(self, path: str) -> bool:
+        """Show the series with this folder in the list (a click on the job state in the header)."""
+        info = next((s for s in self.series_list if s.path == path and not s.broken), None)
+        if info is None:
+            return False
+        if self.app.series is None or self.app.series.path != path:
+            self.series_table.select_rows([info])
+        return True
+
     def replace_series(self, info) -> None:
         """The same series with new facts (its language was chosen): swap the row in place, so nothing is
         reloaded and the selection stays."""
@@ -554,6 +563,7 @@ class BooksStep(Step):
         self.series_table.current = None
 
         def moved(dest):
+            self.app.series_gone(info.path)
             self.ui.winstate.forget_series(info.path)
             if self.ui.settings.get("series") == info.path:
                 self.ui.settings.set("series", None)
@@ -584,6 +594,7 @@ class BooksStep(Step):
             self._clear_chapters()
 
         def moved(dest):
+            self.app.series_gone(info.path, stem)
             self.ui.winstate.clear_volume_selection(info.path, stem)
             if self.ui.settings.get("book") == stem:
                 self.ui.settings.set("book", None)

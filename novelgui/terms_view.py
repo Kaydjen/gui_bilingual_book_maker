@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from . import accent, langrules, model, termlogic, tips
+from . import accent, langrules, model, pieces, termlogic, tips
 from .dialog import message
 from .reader import Reader
 from .step import Step
@@ -808,7 +808,7 @@ class TermsStep(Step):
         """Cheap: the answer is derived from the cached scan; no book is read."""
         if self.doc is None or not model.frontier_ready(self.fr):
             self.next_rows, self.next_n, self.next_extra = [], None, 0
-            self.app.set_terms_state(None, False)
+            self.app.set_terms_state(None, False, None)
             return
         rows = []
         blocking = 0
@@ -828,7 +828,16 @@ class TermsStep(Step):
             blocking += 1 if it.blocking else 0
             rows.append(e)
         self.next_rows, self.next_n, self.next_extra = rows, blocking, len(rows) - blocking
-        self.app.set_terms_state(blocking, model.first_blocked(self.fr, self.scope()))
+        scope = self.scope()
+        infos = self.app.infos
+
+        def done(i):
+            return 0 <= i < len(infos) and pieces.kind_of(infos[i]) == pieces.OK
+        self.app.set_terms_state(blocking, model.first_blocked(self.fr, scope), model.blocked_at(self.fr, scope, done))
+
+    def unreviewed_in(self, chapter: int):
+        """Unreviewed terms of one chapter (None while the book is not scanned)."""
+        return model.chapter_unreviewed(self.fr, chapter) if self.fr is not None else None
 
     def dismiss_candidates(self):
         """Not a term: the selected mined names never hold back translation again."""

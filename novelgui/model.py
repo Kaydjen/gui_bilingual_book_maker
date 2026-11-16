@@ -86,6 +86,19 @@ class SeriesInfo:
         return dict(self.labels).get(stem) or stem
 
 
+def _series_info(p: Path) -> SeriesInfo:
+    """The list entry of one series folder; a folder whose series.json cannot be read is marked `broken`."""
+    try:
+        s = Series.open(p)
+    except (FileNotFoundError, ValueError):
+        return SeriesInfo(p.name, str(p), "", "", (), (), _broken_reason(p))
+    labels = s.settings.get("volume_labels")
+    labels = tuple(sorted((str(k), str(v)) for k, v in labels.items() if isinstance(v, str) and v.strip()))         if isinstance(labels, dict) else ()
+    books = tuple(sorted(s.book_names(), key=natural_key))
+    return SeriesInfo(str(s.settings.get("name") or p.name), str(p), str(s.settings.get("target", "")),
+                      s.target_tag, books, labels, chosen=s.settings.get("target_chosen") is not False)
+
+
 def list_series_task(ctx, library) -> list[SeriesInfo]:
     """Every series of the library, the series folders only (`.deleted` and other hidden folders are not
     series). A folder whose series.json cannot be read is listed too, marked `broken`, so the user sees it."""
@@ -97,19 +110,15 @@ def list_series_task(ctx, library) -> list[SeriesInfo]:
     except OSError:
         return out
     for p in folders:
-        if not (p / "series.json").exists():
-            continue
-        try:
-            s = Series.open(p)
-        except (FileNotFoundError, ValueError):
-            out.append(SeriesInfo(p.name, str(p), "", "", (), (), _broken_reason(p)))
-            continue
-        labels = s.settings.get("volume_labels")
-        labels = tuple(sorted((str(k), str(v)) for k, v in labels.items() if isinstance(v, str) and v.strip()))             if isinstance(labels, dict) else ()
-        books = tuple(sorted(s.book_names(), key=natural_key))
-        out.append(SeriesInfo(str(s.settings.get("name") or p.name), str(p), str(s.settings.get("target", "")),
-                              s.target_tag, books, labels, chosen=s.settings.get("target_chosen") is not False))
+        if (p / "series.json").exists():
+            out.append(_series_info(p))
     return out
+
+
+def read_series(series_path) -> SeriesInfo | None:
+    """One series as the list shows it now, or None when its folder or series.json is gone."""
+    p = Path(series_path)
+    return _series_info(p) if (p / "series.json").exists() else None
 
 
 # ---------------------------------------------------------------- the language of a series (window 3.1)
@@ -599,7 +608,8 @@ import os  # noqa: E402
 
 from novelcore import frontier as core_frontier  # noqa: E402
 from novelcore import job as core_job  # noqa: E402
-from novelcore.pool import DEFAULT_PACE, PACE_MAX, PACE_MIN, key_hash, read_day_exhausted, read_day_usage  # noqa: E402
+from novelcore.pool import (DEFAULT_PACE, PACE_MAX, PACE_MIN, day_return, key_hash, read_day_exhausted,  # noqa: E402
+                            read_day_usage)
 from novelcore.run import Runner, from_ranges  # noqa: E402
 from novelcore.store import ChapterLog  # noqa: E402
 
@@ -650,7 +660,46 @@ def job_view(series_path) -> JobView:
     return JobView(state, rec["book"], chapters, st["blocks_done"], st["blocks_total"], st["chapters_done"],
                    st["chapters_total"], st["blocks_failed"], st["terms_pending"],
                    blocked if isinstance(blocked, int) else None, rec.get("wake_at"), str(rec.get("error") or ""),
-                   foreign=bool(st["running"] and st["pid"] != os.getpid()))
+                   foreign=bool(st["running"] and st["pid"] != os.getpid()),
+                   dead=dead_reasons(series_path) if state == "failed" else ())
+
+
+def dead_reasons(series_path) -> tuple:
+    """Why the pool holds key/model pairs of the series as dead (`invalid key`, `model not found`)."""
+    try:
+        data = json.loads((Path(series_path) / ".state" / "pool.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ()
+    pairs = data.get("pairs") if isinstance(data, dict) else None
+    if not isinstance(pairs, dict):
+        return ()
+    return tuple(sorted({str(r.get("reason") or "") for r in pairs.values()
+                         if isinstance(r, dict) and r.get("state") == "dead"} - {""}))
+
+
+def revive_dead_pairs(series_path, keys, models) -> None:
+    """Give the dead key/model pairs of the series another chance (the pairs are keyed by key hash and model, so
+    a key or a model that was fixed outside the app stays marked dead otherwise). Uses the core's own call."""
+    if not keys or not models:
+        return
+    from novelcore.pool import Pool
+    Pool(list(keys), list(models), state_path=Path(series_path) / ".state" / "pool.json").revive_dead()
+
+
+def set_job_state(series_path, state: str) -> bool:
+    """Rewrite the state of the series' job record (`stopped` ends a quota wait, `finished` discards an
+    unfinished job; translated chapters are never touched). False when there is no record."""
+    rec = core_job.read_job(series_path)
+    if rec is None:
+        return False
+    rec.update(state=state, wake_at=None, terms_pending=0, blocked_chapter=None, error=None, updated=time.time())
+    core_job.write_job(series_path, rec)
+    return True
+
+
+def holder_alive(info) -> bool:
+    """Whether the process named in a lock record (pid, start time) is still the one that wrote it."""
+    return bool(core_job._holder_alive(info))
 
 
 class RunHandle:
@@ -822,6 +871,10 @@ def quota_status(library, keys, models, now: float) -> Quota:
         folders = [p for p in Path(library).iterdir() if p.is_dir()]
     except OSError:
         folders = []
+    try:        # series moved to .deleted today spent today's quota too (window_spec 13.10)
+        folders += [p for p in (Path(library) / ".deleted").iterdir() if p.is_dir()]
+    except OSError:
+        pass
     for f in folders:
         state = f / ".state" / "pool.json"
         if not state.exists():
@@ -934,6 +987,29 @@ def first_blocked(fr, indices) -> bool:
         return False
     gate = gate_candidates()
     return any(gate or it.kind != core_frontier.KIND_CANDIDATE for it in fr.unreviewed(idx[0], candidates=True))
+
+
+def blocked_at(fr, indices, translated=lambda i: False):
+    """The first chapter of the selection that an unreviewed item holds back (the run translates the chapters
+    before it and then stops), or None. A chapter that is translated completely never blocks. Needs a scanned
+    frontier."""
+    if not frontier_ready(fr):
+        return None
+    gate = gate_candidates()
+    for c in sorted(indices):
+        if translated(c):
+            continue
+        if any(gate or it.kind != core_frontier.KIND_CANDIDATE for it in fr.unreviewed(c, candidates=True)):
+            return c
+    return None
+
+
+def chapter_unreviewed(fr, chapter: int):
+    """Unreviewed items that hold back one chapter, or None while the frontier is not scanned."""
+    if not frontier_ready(fr):
+        return None
+    gate = gate_candidates()
+    return sum(1 for it in fr.unreviewed(chapter, candidates=True) if gate or it.kind != core_frontier.KIND_CANDIDATE)
 
 
 def _doc_add_confirmed(self, source: str, tr: str, count: int = 0, first=None):

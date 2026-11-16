@@ -26,6 +26,7 @@ class JobView:
     wake_at: float | None = None
     error: str = ""
     foreign: bool = False         # a live process other than this window works on the series
+    dead: tuple = ()              # reasons of the key/model pairs the pool holds as dead (`invalid key`, ...)
 
     @property
     def unfinished(self) -> bool:

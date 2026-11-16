@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import tkinter as tk
 from pathlib import Path
 
@@ -13,8 +14,10 @@ from .books_view import BooksStep
 from .export_view import ExportStep
 from .dialog import RenameDialog, confirm, message
 from .loadline import LoadLine
+from .applock import AppLock
 from .pathbar import PathBar
-from .settings import Settings, api_base
+from .runctl import RunControl
+from .settings import Settings, api_base, data_dir
 from .step import Step
 from .keystore import KeyStore, PromptStore
 from .settings_view import SettingsPanel, model_list
@@ -88,12 +91,15 @@ class App:
         self.keystore = KeyStore(self.settings.folder)
         self.prompts = PromptStore(self.settings.folder)
         self.closing = False
+        self.lock = None                # the one-window lock, held from main()
+        self.runs = RunControl(self)    # the one place that starts, watches and stops translations
         self.panel = None
         self._lang_reasons: dict = {}   # item of the open language list -> why it is dim
         self.busy_ops: dict = {}    # (series path, volume or None) -> how many operations run on it now
         self._infos_job = None
         self.terms_n = None         # unreviewed terms of the selection that hold the job back (None = not known)
         self.terms_first_blocked = False    # the first chosen chapter has such a term: translation cannot start
+        self.terms_blocked_at = None        # the first chosen chapter that has one (the job runs up to it)
 
         ls = self.fonts.ls
         pad_x, pad_y = int(ls * 1.1), int(ls * 0.9)
@@ -102,7 +108,7 @@ class App:
         head = tk.Frame(outer, bg=BG)
         head.pack(fill="x", pady=(0, int(ls * 0.8)))
         self.head = head
-        self.switch = PathBar(head, ui.font, self.show_step)
+        self.switch = PathBar(head, ui.font, self.path_clicked)
         self.switch.pack(side="left")
         self.gear = Gear(head, int(ls * 1.25), self.open_settings)
         self.gear.pack(side="right", padx=(pad_x, 0))
@@ -114,7 +120,7 @@ class App:
         attach_tip(self.switch, ui.tip, self._path_tip)
         # the context line: next to the path, or on a second row when the header is crowded (1.4)
         self.context = tk.Label(outer, text="", bg=BG, fg=DIM, font=ui.font, anchor="w", cursor="hand2")
-        self.context.pack(side="left", padx=(pad_x, 0))
+        self.context.pack(in_=head, side="left", padx=(pad_x, 0), after=self.switch)
         self.context.bind("<Button-1>", lambda e: self.show_step("books"))
         self.context.bind("<Enter>", lambda e: self.context.configure(fg=TEXT))
         self.context.bind("<Leave>", lambda e: self.context.configure(fg=DIM))
@@ -182,14 +188,18 @@ class App:
         lang = not self.language_pending() or screen not in ("translate", "terms")
         return accent.Facts(keys, lang, self.terms_first_blocked)
 
-    def set_terms_state(self, n, first_blocked: bool) -> None:
-        """The Terms step reports the unreviewed terms of the selection (None = not known) and whether the
-        first chosen chapter is blocked by them."""
+    def set_terms_state(self, n, first_blocked: bool, blocked_at=None) -> None:
+        """The Terms step reports the unreviewed terms of the selection (None = not known), whether the
+        first chosen chapter is blocked by them and which chapter is the first one that is (None = none)."""
         first_blocked = bool(first_blocked) and bool(n)
-        if n == self.terms_n and first_blocked == self.terms_first_blocked:
+        blocked_at = blocked_at if n else None
+        if n == self.terms_n and first_blocked == self.terms_first_blocked and blocked_at == self.terms_blocked_at:
             return
-        self.terms_n, self.terms_first_blocked = n, first_blocked
+        self.terms_n, self.terms_first_blocked, self.terms_blocked_at = n, first_blocked, blocked_at
         self.refresh_path()
+        tr = self.steps.get("translate")
+        if tr is not None:
+            tr.on_terms()
         exp = self.steps.get("export")
         if exp is not None:
             exp._update_buttons()
@@ -205,12 +215,11 @@ class App:
         return accent.gets_accent(accent.TERMS, self.accent_facts())
 
     def translate_indicator(self):
-        """What follows `Translate` in the path: (text or None, lit). A job of the series that is unfinished or
-        running lights a dot while another step is shown. The running-job indicator of the Translate step
-        (`> series . 62 %`, queue count, wait / terms / stopped) is plugged in here, in this one method."""
-        tr = self.steps.get("translate")
-        unfinished = bool(tr is not None and (tr.view.unfinished or tr.running))
-        return None, unfinished and self.current != "translate"
+        """What follows `Translate` in the path: (text or None, lit). The running job of any series as
+        `> series . 62 %` with the queue count, else the reason a job or the queue waits (`Wait 09:01`, `Terms 12`,
+        `Stopped`, `Failed`); tied to the job, never to the series shown."""
+        text = self.runs.indicator()
+        return (text or None), False
 
     def path_items(self) -> list:
         items = []
@@ -221,7 +230,7 @@ class App:
                 items.append((k, step.label, n, bool(n) and self.terms_red()))
             elif k == "translate":
                 text, lit = self.translate_indicator()
-                items.append((k, step.label, text, lit))
+                items.append((k, step.label, text, lit, bool(text) and text.startswith("▶")))
             else:
                 items.append((k, step.label, None, False))
         return items
@@ -246,8 +255,90 @@ class App:
             why = tips.PATH_TERMS_RED if self.terms_first_blocked else tips.PATH_TERMS_DIM
             return tips.PATH_TERMS_N[0] % (n, why), tips.PATH_TERMS_N[1]
         if key == "translate":
-            return tips.PATH_TRANSLATE
+            return self.indicator_tip() or tips.PATH_TRANSLATE
         return tips.PATH_EXPORT
+
+    def path_clicked(self, key: str) -> None:
+        """A click on the path. `Translate` with a job of another series running or waiting opens that series."""
+        if key == "translate":
+            path = self.runs.indicator_series()
+            if path and (self.series is None or self.series.path != path):
+                books = self.steps.get("books")
+                if books is not None and books.open_series_path(path):
+                    self.show_step("translate")
+                    return
+        self.show_step(key)
+
+    def indicator_tip(self):
+        """The tooltip of `Translate` while it carries a job state: series, volume, chapters, model, keys, pace."""
+        runs = self.runs
+        text = runs.indicator()
+        if not text:
+            return None
+        series = runs.indicator_series()
+        info = self.series_info(series) if series else None
+        name = info.name if info is not None else "-"
+        r = runs.run
+        if r is not None and r.kind == "job":
+            cfg = self.run_config()
+            vol = info.label_of(r.book) if info is not None else r.book
+            keys = len(cfg.keys)
+            return tips.fill(tips.IND_RUNNING, name, vol, self.chapters_label(r.series, r.book, r.chapters),
+                             (cfg.models or ["-"])[0], "%d, used in turn" % keys if keys else "none",
+                             "%g a minute" % (cfg.pace or model.default_pace()))
+        if text.startswith("Wait"):
+            return tips.fill(tips.IND_WAIT, text[5:], name)
+        if text.startswith("Terms"):
+            return tips.fill(tips.IND_TERMS, name)
+        if text.startswith("Failed"):
+            return tips.fill(tips.IND_FAILED, name)
+        if text.startswith("Queue"):
+            return tips.fill(tips.IND_QUEUE, str(len(runs.queue)))
+        return tips.fill(tips.IND_STOPPED, name)
+
+    def chapters_label(self, series_path: str, book: str, chapters) -> str:
+        """`2697-2750` for the chapters of a job: title numbers when that volume is open, else positions."""
+        if self.series is not None and self.series.path == series_path and book == self.book and self.infos:
+            return header.range_text(self.infos, chapters) or "-"
+        spans = []
+        for i in sorted(set(chapters)):
+            if spans and spans[-1][1] == i - 1:
+                spans[-1][1] = i
+            else:
+                spans.append([i, i])
+        return ", ".join("%d" % (a + 1) if a == b else "%d-%d" % (a + 1, b + 1) for a, b in spans[:3]) or "-"
+
+    def series_info(self, path: str):
+        """The list entry of a series of the library, or None."""
+        books = self.steps.get("books")
+        for s in (books.series_list if books is not None else []):
+            if s.path == path:
+                return s
+        return None
+
+    # ------------------------------------------------------------- the run (stage 3 step 5)
+    def runs_changed(self, starting: bool = False, ended=None, tick: bool = False) -> None:
+        """The run, the wait or the queue changed (or the clock ticked while one is active)."""
+        if self.closing:
+            return
+        self.refresh_path()
+        tr = self.steps.get("translate")
+        if tr is not None:
+            tr.on_runs(starting, ended, tick)
+        if not tick:
+            exp = self.steps.get("export")
+            if exp is not None and ended is not None:
+                exp._update_buttons()
+
+    def run_progress(self, run) -> None:
+        """The chapters of a running job moved on: the chapter list of Books and the pieces of Export follow."""
+        tr = self.steps.get("translate")
+        if tr is not None:
+            tr.on_progress(run)
+
+    def series_gone(self, series_path: str, book: str | None = None) -> None:
+        """A series was deleted or a volume removed: queue items of it go, a wait on it ends."""
+        self.runs.series_gone(series_path, book)
 
     # ------------------------------------------------------------- the context line (1.3, 1.4)
     def context_text(self) -> str:
@@ -384,6 +475,8 @@ class App:
 
     def library_block_reason(self) -> str:
         """Why the library cannot be changed now ("" when it can): a translation runs or waits."""
+        if self.runs.running or self.runs.sched.wait is not None:
+            return "A translation is running or waiting for the daily quota. Stop it first."
         books = self.steps.get("books")
         views = []
         for s in (books.series_list if books is not None else []):
@@ -395,11 +488,11 @@ class App:
         return busy.library_change_reason(views)
 
     def queue_items(self) -> list:
-        """The queued translations. Hook: the queue is built in a later step; changing the library clears it."""
-        return []
+        """The queued translations; changing the library clears them."""
+        return self.runs.queue_items()
 
     def clear_queue(self) -> None:
-        """Hook for the queue of a later step."""
+        self.runs.clear_queue()
 
     def change_library(self, on_done=None) -> bool:
         """The settings `Change`: choose a folder and use it. Disabled while a translation runs or waits; with
@@ -438,8 +531,12 @@ class App:
             self.busy_ops.pop(k, None)
 
     def extra_block_reasons(self, series_path: str, volume=None) -> list:
-        """Hook: further reasons a series cannot be deleted or changed now (the queue and the quota wait of the
-        window are added here by the translate step)."""
+        """Further reasons a series cannot be deleted or changed now: this window starts or runs a job of it (the
+        record may not say so yet). A queued item does not hold a deletion back: it leaves the queue."""
+        r = self.runs.run
+        if r is not None and r.series == series_path and r.kind == "job" and (
+                volume is None or not r.book or r.book == volume):
+            return [busy.RUNNING]
         return []
 
     def series_block_reason(self, series_path: str, volume=None) -> str:
@@ -468,7 +565,10 @@ class App:
                 view = model.job_view(series_path)
             except Exception:
                 view = None
-        return busy.language_reason(view, self.extra_block_reasons(series_path))
+        extra = self.extra_block_reasons(series_path)
+        if self.runs.queued(series_path) is not None:
+            extra.append("This series is waiting in the queue; the language is read when it starts.")
+        return busy.language_reason(view, extra)
 
     def language_menu(self, xr: int, yr: int, openers=()) -> None:
         """The `To` list at screen position (xr, yr): Russian, Ukrainian, Polish, Other.... Once a block is
@@ -647,17 +747,56 @@ class App:
         self.closing = True
         try:
             self.ui.panels.close_all()          # an open prompt editor keeps its draft
+            self.runs.shutdown()                # a running job is stopped first, up to a minute
             for s in self.steps.values():
                 s.shutdown()
             geo = self.root.geometry()
             self.settings.set("geometry", geo)
         finally:
             self.ui.worker.close()
+            if self.lock is not None:
+                self.lock.release()
             self.root.destroy()
 
     def run(self) -> None:
         self.root.mainloop()
 
 
-def main(argv=None) -> None:
-    App().run()
+def _already_open(holder) -> None:
+    """A second start: say so and bring the first window to the front (window_spec 10.9). The environment
+    variable NOVELGUI_MESSAGE_FILE makes the message a line in that file (scripted checks)."""
+    hwnd = int((holder or {}).get("hwnd") or 0)
+    raised = platform.raise_window(hwnd) if hwnd else False
+    path = os.environ.get("NOVELGUI_MESSAGE_FILE")
+    if path:
+        try:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write("%s | raised=%s hwnd=%d\n" % (tips.ALREADY_OPEN, raised, hwnd))
+        except OSError:
+            pass
+        return
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        from tkinter import messagebox
+        messagebox.showinfo(DEFAULT_TITLE, tips.ALREADY_OPEN, parent=root)
+        root.destroy()
+    except tk.TclError:
+        pass
+
+
+def main(argv=None) -> int:
+    """Start the window unless another one of this program is open (one app window at a time)."""
+    lock = AppLock(data_dir(), model.holder_alive)
+    if not lock.acquire():
+        _already_open(lock.holder)
+        return 3
+    app = None
+    try:
+        app = App()
+        app.lock = lock
+        lock.set_window(platform.window_handle(app.root))
+        app.run()
+    finally:
+        lock.release()
+    return 0

@@ -8,9 +8,9 @@ SEP = " · "
 MAX_SPANS = 3
 
 
-def chapters_text(infos, indices) -> str:
-    """`chapters 2697-2750`, `chapter 5`, `chapters 1-4, 9-12`: the chosen chapters by the numbers printed in
-    their titles (their position when a title has none). Empty without a selection."""
+def range_text(infos, indices) -> str:
+    """`2697-2750`, `5`, `1-4, 9-12`: chapters by the numbers printed in their titles (their position when a title
+    has none). Empty without chapters."""
     idx = sorted({i for i in indices if 0 <= i < len(infos)})
     if not idx:
         return ""
@@ -22,8 +22,17 @@ def chapters_text(infos, indices) -> str:
             spans.append([i, i])
     parts = [pieces.number_label(pieces.number_of(infos[a]), pieces.number_of(infos[b])) for a, b in spans]
     more = " …" if len(parts) > MAX_SPANS else ""
-    word = "chapter" if len(idx) == 1 else "chapters"
-    return "%s %s%s" % (word, ", ".join(parts[:MAX_SPANS]), more)
+    return "%s%s" % (", ".join(parts[:MAX_SPANS]), more)
+
+
+def chapters_text(infos, indices) -> str:
+    """`chapters 2697-2750`, `chapter 5`, `chapters 1-4, 9-12`: the chosen chapters by the numbers printed in
+    their titles (their position when a title has none). Empty without a selection."""
+    text = range_text(infos, indices)
+    if not text:
+        return ""
+    n = len({i for i in indices if 0 <= i < len(infos)})
+    return "%s %s" % ("chapter" if n == 1 else "chapters", text)
 
 
 def context_line(series: str, volume: str, chapters: str, language: str) -> str:

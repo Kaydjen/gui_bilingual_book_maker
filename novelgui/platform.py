@@ -121,6 +121,35 @@ def print_window(title: str, path) -> tuple[int, int]:
     return w, h
 
 
+def window_handle(win) -> int:
+    """The top-level window handle of a Tk window (0 off Windows)."""
+    if not IS_WINDOWS:
+        return 0
+    try:
+        from ctypes import windll
+        win.update_idletasks()
+        return int(windll.user32.GetParent(win.winfo_id()) or win.winfo_id())
+    except Exception:
+        return 0
+
+
+def raise_window(hwnd: int) -> bool:
+    """Bring the window with this handle to the front (restored when minimised). False when it is gone."""
+    if not IS_WINDOWS or not hwnd:
+        return False
+    try:
+        from ctypes import windll
+        u32 = windll.user32
+        if not u32.IsWindow(hwnd):
+            return False
+        if u32.IsIconic(hwnd):
+            u32.ShowWindow(hwnd, 9)         # SW_RESTORE
+        u32.SetForegroundWindow(hwnd)
+        return True
+    except Exception:
+        return False
+
+
 def open_folder(path) -> bool:
     """Show a folder in the file manager."""
     import os
