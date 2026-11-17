@@ -56,6 +56,7 @@ class VTable(tk.Frame):
         self.on_context = None
         self.on_activate = None
         self.on_view = None           # (first, last) visible rows, after every redraw
+        self.on_widths = None         # a column width was dragged (called when the mouse is released)
         self.draw_ms = 0.0
         self._flash = None
         self._flash_job = None
@@ -66,6 +67,7 @@ class VTable(tk.Frame):
 
         self.head = tk.Canvas(self, height=self.rh if header else 0, bg=S1, highlightthickness=0, bd=0)
         self.body = tk.Canvas(self, bg=S1, highlightthickness=0, bd=0, takefocus=1)
+        self.body.taborder = True       # Tab reaches the table (keyboard.py)
         self.sb = ttk.Scrollbar(self, orient="vertical", style="Dark.Vertical.TScrollbar", command=self._sb_cmd)
         if header:
             self.head.grid(row=0, column=0, sticky="ew")
@@ -107,7 +109,7 @@ class VTable(tk.Frame):
         h.bind("<Configure>", lambda e: self.draw_head())
         h.bind("<Button-1>", self._head_click)
         h.bind("<B1-Motion>", self._head_drag)
-        h.bind("<ButtonRelease-1>", lambda e: setattr(self, "_drag_col", None))
+        h.bind("<ButtonRelease-1>", self._head_release)
         h.bind("<Motion>", self._head_motion)
 
     # ---- subclass points
@@ -173,7 +175,7 @@ class VTable(tk.Frame):
         self.rows = rows
         self.pos = {id(r): i for i, r in enumerate(rows)}
         keep = keep or set()
-        self.sel = {i for i, r in enumerate(rows) if id(r) in keep}
+        self.sel = {i for i, r in enumerate(rows) if id(r) in keep} if keep else set()
         self.cursor = self.anchor = None
         if not keep_view:
             self.y0 = 0
@@ -478,6 +480,21 @@ class VTable(tk.Frame):
             self.widths[k] = max(self.cw * 5, w0 + e.x - x0)
             self.draw()
             self.draw_head()
+
+    def _head_release(self, e):
+        moved = self._drag_col is not None
+        self._drag_col = None
+        if moved and self.on_widths:
+            self.on_widths()
+
+    def widths_state(self) -> dict:
+        """Column widths in digit widths (stay right when the scale changes)."""
+        return {k: round(px / max(1, self.cw), 2) for k, px in self.widths.items()}
+
+    def set_widths_state(self, units: dict) -> None:
+        for k, u in units.items():
+            if k in self.widths and isinstance(u, (int, float)):
+                self.widths[k] = max(self.cw * 5, int(u * self.cw))
 
     def head_colour(self, col, active):
         """Colour of a column heading (a table may mark one heading, e.g. with the accent)."""

@@ -226,6 +226,7 @@ class Reader(tk.Frame):
         self.entry = entry
         if entry is None or not self.series_path or not self.book:
             self.rx = None
+            self.req += 1               # a paragraph that is still on its way belongs to a row that is gone
             self._clear("0 / 0")
             return
         self.rx = termlogic.term_regex(entry)
@@ -329,6 +330,8 @@ class Reader(tk.Frame):
 
     def _paint(self, payload, ci, bi):
         title, texts, indices = payload
+        if self.entry is None:
+            return
         try:
             pos = indices.index(bi)
         except ValueError:

@@ -23,12 +23,12 @@ from novelcore.exporter import NothingToExport
 from novelcore.exporter import export as core_export
 from novelcore.htmlscan import strip_markers
 from novelcore.store import chapter_file_name, read_jsonl, safe_name, split_target
-from novelcore.termmatch import Matcher
+from novelcore.termmatch import Matcher, scan_book
 from novelcore.terms import FILE_NAME as TERMS_FILE
 from novelcore.terms import TYPES, TermBase, import_glossary
 
 from . import chapterlogic as cl
-from . import langrules, pieces
+from . import keystates, langrules, pieces
 from .libraryrules import explain_oserror, natural_key
 from .termlogic import PRONOUNS
 
@@ -535,6 +535,23 @@ def load_terms_task(ctx, series_path, tag: str) -> TermsDoc:
     return TermsDoc(series_path, tag)
 
 
+def fill_seen_task(ctx, doc: TermsDoc, series_path, book_name: str) -> int:
+    """After a glossary import: read the open book and note, for every term of the base, how often and in which
+    chapters it occurs (the core's scan_book fills `seen` and `count`), then save the base. Returns the number of
+    chapters read. Raises what reading the book raises (the window shows it)."""
+    book = open_book(book_file(series_path, book_name))
+    for attempt in range(3):
+        try:
+            rep = scan_book(doc.base, book)
+            break
+        except RuntimeError:        # the base changed under the scan: try again
+            time.sleep(0.05)
+    else:
+        return 0
+    doc.save()
+    return int(rep.get("chapters", 0))
+
+
 def terms_in_selection_task(ctx, doc: TermsDoc, series_path, book_name: str, indices) -> set:
     """Ids of the entries that are found in the selected chapters."""
     if not indices:
@@ -973,6 +990,30 @@ def quota_status(library, keys, models, now: float) -> Quota:
                 if "%s|%s" % (h, m) not in exhausted:
                     left += max(0, lim - used.get((h, m), 0))
     return Quota(len(hashes), len(models), limits[0] if limits else None, total_used, left, cap)
+
+
+def key_states(library, keys, models, now: float):
+    """State of every key (`{key: keystates.KeyState}`) and the models held as not found (`set`), merged over the
+    pool files of all series of the library (window_spec 11.2, 11.4). Reads files: call it on a worker thread."""
+    tables = []
+    try:
+        folders = [p for p in Path(library).iterdir() if p.is_dir() and not p.name.startswith(".")]
+    except OSError:
+        folders = []
+    for f in folders:
+        try:
+            data = json.loads((f / ".state" / "pool.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict) and isinstance(data.get("pairs"), dict):
+            tables.append(data["pairs"])
+    hashes = {k: key_hash(k) for k in keys}
+    by_hash, missing = keystates.merge_pairs(tables, list(hashes.values()), list(models), now)
+    return {k: by_hash[h] for k, h in hashes.items()}, missing
+
+
+def key_states_task(ctx, library, keys, models):
+    return key_states(library, keys, models, time.time())
 
 
 # ---------------------------------------------------------------- series settings, prompt

@@ -147,6 +147,7 @@ def attach_tip(widget, tip, fn):
         if tip.cur is not None and tip.cur[0] is widget:
             tip.hide()
 
+    widget.tip_fn = fn          # what a check calls to see what the pointer would be told here
     widget.bind("<Motion>", moved, add="+")
     widget.bind("<Enter>", moved, add="+")
     widget.bind("<Leave>", left, add="+")

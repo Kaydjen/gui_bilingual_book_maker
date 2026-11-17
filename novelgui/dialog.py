@@ -117,6 +117,21 @@ class Modal(tk.Frame):
         self.scrolls = False
         self.is_open = False
         self._watch_job = None
+        self.main = None            # the button Enter presses (a Pill); set by the panel that has one
+
+    def reveal(self, w) -> None:
+        """Scroll the panel so that control `w` is in view (Tab moved the focus to it)."""
+        if not self.scrolls:
+            return
+        self.update_idletasks()
+        total = max(1, self.shell.winfo_reqheight())
+        view = int(self.canvas.cget("height"))
+        y = w.winfo_rooty() - self.shell.winfo_rooty()
+        top = self.canvas.canvasy(0)
+        if y < top:
+            self.canvas.yview_moveto(max(0.0, (y - 4) / total))
+        elif y + w.winfo_height() > top + view:
+            self.canvas.yview_moveto(min(1.0, (y + w.winfo_height() - view + 4) / total))
 
     # ---- size and place
     def fit(self) -> None:
@@ -221,6 +236,7 @@ def message(ui, text: str, on_close=None) -> Modal:
         padx=m.pad, pady=(m.pad, int(m.pad * 0.8)))
     ok = Pill(m.body, "OK", m.close, ui.font, bg=S2)
     ok.pack(pady=(0, 0))
+    m.main = ok
     m.show()
     ok.focus_set()
     return m
@@ -269,6 +285,7 @@ class AddBookDialog(Modal):
         btns.pack(fill="x", padx=pad, pady=(int(gap * 1.4), 0))
         self.add_btn = Pill(btns, "Add", self._ok, f, bg=S2)
         self.add_btn.pack(side="right")
+        self.main = self.add_btn
         Pill(btns, "Cancel", self.close, f, kind="dim", bg=S2).pack(side="right", padx=(0, gap // 2))
         attach_tip(self.add_btn, ui.tip, lambda e: self._add_tip())
         self._apply_mode()
@@ -356,6 +373,7 @@ class RenameDialog(Modal):
         btns.pack(fill="x", padx=pad, pady=(int(gap * 0.6), 0))
         self.ok_btn = Pill(btns, button, self._ok, f, bg=S2)
         self.ok_btn.pack(side="right")
+        self.main = self.ok_btn
         Pill(btns, "Cancel", self.close, f, kind="dim", bg=S2).pack(side="right", padx=(0, gap // 2))
         attach_tip(self.ok_btn, ui.tip, lambda e: None if self.ok_btn.enabled else (self.check(self.field.get())
                                                                                      or None))
@@ -399,6 +417,7 @@ def confirm(ui, text: str, yes: str, on_yes, no: str = "Cancel", valid=None) -> 
 
     ok_btn = Pill(row, yes, ok, ui.font, bg=S2)
     ok_btn.pack(side="right")
+    m.main = ok_btn
     Pill(row, no, m.close, ui.font, kind="dim", bg=S2).pack(side="right", padx=(0, ui.ls // 2))
     m.show()
     ok_btn.focus_set()

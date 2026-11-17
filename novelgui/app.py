@@ -7,7 +7,6 @@ import tkinter as tk
 from pathlib import Path
 
 from . import busy
-from . import chapterlogic as cl
 from . import libraryrules as rules
 from . import accent, header, langrules, model, platform, selection, tips
 from .books_view import BooksStep
@@ -29,6 +28,8 @@ from .ui import UI
 from .widgets import install_clipboard
 
 DEFAULT_TITLE = "Novel"
+MIN_W_UNITS = 98        # minimum window size in digit widths and line heights (window_spec 10.8)
+MIN_H_UNITS = 41
 
 
 class Gear(tk.Canvas):
@@ -37,18 +38,28 @@ class Gear(tk.Canvas):
     def __init__(self, master, size, command, bg=BG):
         super().__init__(master, width=size, height=size, bg=bg, highlightthickness=0, bd=0, cursor="hand2")
         self.size, self.command, self.hover = size, command, False
+        self.taborder = True
+        self.focused = False
         self.bind("<Enter>", lambda e: self._set(True))
         self.bind("<Leave>", lambda e: self._set(False))
         self.bind("<ButtonRelease-1>", lambda e: self.command())
+        self.bind("<FocusIn>", lambda e: self._focus(True))
+        self.bind("<FocusOut>", lambda e: self._focus(False))
+        self.bind("<Return>", lambda e: self.command() or "break")
+        self.bind("<space>", lambda e: self.command() or "break")
         self.draw()
 
     def _set(self, v):
         self.hover = v
         self.draw()
 
+    def _focus(self, v):
+        self.focused = v
+        self.draw()
+
     def colour(self) -> str:
-        """Brighter on hover, never darker than the background."""
-        return BRIGHT if self.hover else DIM
+        """Brighter on hover or with the keyboard focus, never darker than the background."""
+        return BRIGHT if self.hover or self.focused else DIM
 
     def draw(self):
         import math
@@ -113,9 +124,6 @@ class App:
         self.gear = Gear(head, int(ls * 1.25), self.open_settings)
         self.gear.pack(side="right", padx=(pad_x, 0))
         attach_tip(self.gear, ui.tip, lambda e: "Settings: keys, models, pace, keep awake.")
-        self.summary = tk.Label(head, text="", bg=BG, fg=DIM, font=ui.font, anchor="e")
-        self.summary.pack(side="right")
-        attach_tip(self.summary, ui.tip, lambda e: self._summary_tip())
         attach_tip(ui.pick, ui.tip, self._language_tip)
         attach_tip(self.switch, ui.tip, self._path_tip)
         # the context line: next to the path, or on a second row when the header is crowded (1.4)
@@ -140,7 +148,7 @@ class App:
         self.register_step(ExportStep)
 
         for i, key in enumerate(self.order, 1):
-            root.bind("<Control-Key-%d>" % i, lambda e, k=key: self.show_step(k))
+            root.bind("<Control-Key-%d>" % i, lambda e, k=key: None if ui.panel_open() else self.show_step(k))
         root.bind("<Control-a>", self._ctrl_a)
         root.protocol("WM_DELETE_WINDOW", self.close)
 
@@ -149,12 +157,15 @@ class App:
         w, h = min(int(cw * 150), sw - 40), min(int(ls * 48), sh - 80)
         geo = self.settings.get("geometry")
         root.geometry(self._geometry(geo, w, h, sw, sh))
-        root.minsize(int(cw * 100), int(ls * 28))
+        root.minsize(*self.min_size(cw, ls, sw, sh))
         platform.dark_titlebar(root)
         root.deiconify()
         root.update_idletasks()
         first = self.settings.get("step")
-        self.show_step(first if first in self.steps and first != "translate" else "books")
+        first = first if first in self.steps else "books"
+        if first != "books":
+            self.steps["books"].ensure_loaded()     # the last series comes back although Books is not the screen
+        self.show_step(first)
         root.update()
 
     # ------------------------------------------------------------- steps
@@ -365,7 +376,7 @@ class App:
         avail = self.head.winfo_width()
         if avail <= 1:
             avail = self.root.winfo_width() - 2 * gap
-        side = self.gear.size + self.summary.winfo_reqwidth() + 2 * gap
+        side = self.gear.size + 2 * gap
         ctx_w = f.measure(text) if text else 0
         second = header.crowded(self.switch.width_needed(), ctx_w, side, avail, gap)
         want = 2 if second else 1
@@ -379,7 +390,7 @@ class App:
                 self.head2.pack_forget()
                 self.context.pack(in_=self.head, side="left", padx=(gap, 0), after=self.switch)
         self.context.tkraise()          # it is packed into a frame that is not its parent: keep it on top
-        room = (avail if want == 2 else max(60, avail - self.switch.width_needed() - side - 2 * gap)) - gap
+        room = (avail - gap) if want == 2 else max(60, avail - self.switch.width_needed() - side - 2 * gap)   # as `crowded`
         shown = self._fit(text, room)
         if self.context.cget("text") != shown:
             self.context.configure(text=shown)
@@ -702,29 +713,12 @@ class App:
         self.refresh_summary()
 
     def refresh_summary(self) -> None:
-        sel = self.selection
-        if not sel or not self.infos:
-            text = ""
-        else:
-            n, b, complete = cl.selection_size(self.infos, sel.indices)
-            text = selection.summary(sel, n, b, complete)
-        if self.summary.cget("text") != text:
-            self.summary.configure(text=text)
+        """The chosen chapters changed: the context line says it (the dim summary of the header is gone, 7.6)."""
         self.refresh_context()
-
-    def _summary_tip(self):
-        sel = self.selection
-        if not sel:
-            return None
-        spans = ", ".join("%d" % a if a == b else "%d-%d" % (a, b) for a, b in sel.spans()[:4])
-        if len(sel.spans()) > 4:
-            spans += " ..."
-        return ("The chapters chosen on the Books step. The Terms and Translate steps work on them.",
-                [("Book", sel.book), ("Positions", spans)])
 
     def _ctrl_a(self, e):
         step = self.steps.get(self.current)
-        if isinstance(e.widget, (tk.Entry, tk.Text)):
+        if isinstance(e.widget, (tk.Entry, tk.Text)) or self.ui.panel_open():
             return None
         if isinstance(step, BooksStep):
             step.select_all_chapters()
@@ -732,6 +726,12 @@ class App:
         return None
 
     # ------------------------------------------------------------- window
+    @staticmethod
+    def min_size(cw, ls, sw, sh) -> tuple:
+        """The smallest window: the largest panel (settings, 68 x 37 units; the prompt editor, 88 x 27) fits whole
+        inside it with its margin, at every scale. A screen too small for that limits it (the panel then scrolls)."""
+        return min(int(cw * MIN_W_UNITS), sw - 40), min(int(ls * MIN_H_UNITS), sh - 80)
+
     @staticmethod
     def _geometry(geo, w, h, sw, sh) -> str:
         if isinstance(geo, str):

@@ -31,7 +31,18 @@ ADD_SERIES_NAME = ("The name of the series as the list shows it. Its folder in t
 ADD_SERIES_NAME_FIXED = "The name of the series this volume goes to. Change it with Rename in the series menu."
 
 # Settings: the library row
-LIBRARY_PATH = ("The folder that holds every series. Click to open it.",
+ADDING = "A book is being copied into the library. Add book is back when it is done."
+TERMS_IMPORTING = ("The glossary is being read and the open book is scanned for the imported terms, to fill Count "
+                   "and the chapters. You can look around; editing waits until it is done.",
+                   [("Then", "Count and chapters are filled")])
+TERMS_SCANNING = ("The book is being read to find where the terms occur. The table stays usable; the Next filter "
+                  "fills in when this is done.", [("Shown as", "percent of the book read")])
+TERMS_NO_MATCH = "No term matches the search text (and the type chosen)."
+KEYS_LIST =("Your API keys, each with its state: ready, paused until a time, daily quota until a time, or invalid "
+             "(the service refused it). A key from a separate Google project brings its own daily quota. A key is "
+             "never shown in full. A key added or removed while a translation runs applies from the next start.",
+             [("Stored in", "keys.json"), ("State", "worst over all series"), ("Never", "in a series or a log")])
+LIBRARY_PATH =("The folder that holds every series. Click to open it.",
                 [("Kept in", "this app's settings"), ("Series", "one sub-folder each")])
 LIBRARY_CHANGE = ("Choose another folder for the library. Series in the old folder are not moved.",
                   [("Needs", "no running translation")])

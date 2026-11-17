@@ -35,14 +35,29 @@ class Pill(tk.Canvas):
         self.w = font.measure(text) + 2 * self.px
         self.h = ls + 2 * self.py
         super().__init__(master, width=self.w, height=self.h, bg=bg, highlightthickness=0, bd=0, cursor="hand2")
+        self.taborder = True            # Tab reaches the button; Enter or Space presses it (keyboard.py)
+        self.focused = False
         self.bind("<Enter>", lambda e: self._set_hover(True))
         self.bind("<Leave>", lambda e: self._set_hover(False))
         self.bind("<ButtonRelease-1>", self._click)
+        self.bind("<FocusIn>", lambda e: self._set_focus(True))
+        self.bind("<FocusOut>", lambda e: self._set_focus(False))
+        self.bind("<Return>", self._key)
+        self.bind("<space>", self._key)
         self.draw()
 
     def _set_hover(self, v):
         self.hover = v
         self.draw()
+
+    def _set_focus(self, v):
+        self.focused = v
+        self.draw()
+
+    def _key(self, e):
+        if self.enabled:
+            self.command()
+        return "break"
 
     def _click(self, e):
         if self.enabled and 0 <= e.x < self.w and 0 <= e.y < self.h:
@@ -80,6 +95,9 @@ class Pill(tk.Canvas):
             rest = S3 if self.base == S2 else S2
             fill, fg = (S4 if self.hover else (S3 if self.on else rest)), (BRIGHT if self.on else TEXT)
         rrect(self, 0, 0, self.w, self.h, self.h * 0.28, fill=fill, outline="")
+        if self.focused and self.enabled:
+            rrect(self, 1, 1, self.w - 1, self.h - 1, self.h * 0.28, fill="", outline=BRIGHT if self.kind != "accent"
+                  else "#ffffff", width=2)
         self.create_text(self.w / 2, self.h / 2, text=self.text, fill=fg, font=self.font)
 
 
@@ -102,9 +120,29 @@ class Segmented(tk.Canvas):
         self.boxes = []
         self.enabled = True
         super().__init__(master, height=self.h, bg=bg, highlightthickness=0, bd=0, cursor="hand2")
+        self.taborder = True            # Tab reaches the switch; Left and Right change the choice
+        self.focused = False
         self.bind("<Button-1>", self._click)
         self.bind("<Motion>", self._motion)
         self.bind("<Leave>", lambda e: self._motion(None))
+        self.bind("<FocusIn>", lambda e: self._set_focus(True))
+        self.bind("<FocusOut>", lambda e: self._set_focus(False))
+        self.bind("<Left>", lambda e: self._arrow(-1))
+        self.bind("<Right>", lambda e: self._arrow(1))
+
+    def _set_focus(self, v):
+        self.focused = v
+        self.draw()
+
+    def _arrow(self, d):
+        keys = [it[0] for it in self.items]
+        if self.enabled and self.value in keys:
+            nxt = keys[max(0, min(len(keys) - 1, keys.index(self.value) + d))]
+            if nxt != self.value:
+                self.value = nxt
+                self.draw()
+                self.on_change(nxt)
+        return "break"
 
     def set_items(self, items, value=None):
         self.items = items
@@ -163,7 +201,7 @@ class Segmented(tk.Canvas):
         total = x + inset
         self.boxes = boxes
         self.configure(width=total)
-        rrect(self, 0, 0, total, self.h, self.h * 0.28, fill=S2, outline="")
+        rrect(self, 0, 0, total, self.h, self.h * 0.28, fill=S2, outline=FAINT if self.focused else "")
         for i, (key, label, cnt, *rest) in enumerate(self.items):
             a, b, wl, wc = spans[i]
             hot = bool(rest and rest[0])

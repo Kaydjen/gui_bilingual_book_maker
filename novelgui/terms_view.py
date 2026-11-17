@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from . import accent, langrules, model, pieces, termlogic, tips
+from . import accent, langrules, model, pieces, termlogic, termsmemory, tips
 from .dialog import message
 from .reader import Reader
 from .step import Step
@@ -50,6 +50,11 @@ class TermsStep(Step):
         self.next_extra = 0
         self._virt: dict = {}
         self.dismissed: list = []
+        self._restoring = True      # while the remembered state is put back nothing is written
+        self._restore = None        # the remembered tab and sort, taken by the first load of a term base
+        self._want_next = False
+        self._remember_job = None
+        self.importing = ""         # "" or what the import is doing (`Importing…`, `Scanning…`)
 
         top = tk.Frame(self, bg=BG)
         top.pack(fill="x", pady=(0, gap))
@@ -59,6 +64,9 @@ class TermsStep(Step):
         self.type_btn.pack(side="right")
         self.sel_btn = Pill(top, "Selected chapters", self._toggle_selection, ui.font, kind="dim")
         self.sel_btn.pack(side="right", padx=(0, gap // 2))
+        self.status = tk.Label(top, text="", bg=BG, fg=DIM, font=ui.font)   # `0` for a search with no result, `Scanning 40 %`
+        self.status.pack(side="right", padx=(0, gap // 2))
+        attach_tip(self.status, ui.tip, lambda e: self._status_tip())
         self.search = Field(top, ui.font, on_change=self._search_changed, icon=True)
         self.search.pack(side="left", fill="x", expand=True, padx=gap)
 
@@ -130,11 +138,12 @@ class TermsStep(Step):
         attach_tip(self.confirm_btn, tip, lambda e: tips.NEED_LANGUAGE if not self._lang_ok() else (
             "Mark every row shown here as checked. Rows with an open question are skipped; they stay for you "
             "to answer.", [("Applies to", "rows shown in New"), ("Skips", "rows with questions")]))
-        attach_tip(self.import_btn, tip, lambda e: tips.NEED_LANGUAGE if not self._lang_ok() else (
+        attach_tip(self.import_btn, tip, lambda e: tips.TERMS_IMPORTING if self.importing else (
+            tips.NEED_LANGUAGE if not self._lang_ok() else (
             "Read your own glossary files, plain JSON with the English term and its translation. The terms "
             "become confirmed; a term that two files translate differently becomes a question.",
             [("Format", "{\"term\": \"translation\"}"), ("Terms become", "confirmed"),
-             ("Conflicts", "become questions")]))
+             ("Conflicts", "become questions")])))
         attach_tip(self.export_btn, tip, lambda e: (
             "Save the whole term base to a JSON file.", [("Format", "terms.json"), ("Contains", "every term")]))
         attach_tip(self.sel_btn, tip, lambda e: (
@@ -154,12 +163,52 @@ class TermsStep(Step):
         t.wire_tips()
         t.on_language = lambda xr, yr: self.app.language_menu(xr, yr, openers=(t.head,))
         t.body.bind("<KeyPress>", self._key_press, add="+")
-        ui.root.bind("<Control-f>", lambda e: self._focus_search() if self.winfo_ismapped() else None, add="+")
+        ui.root.bind("<Control-f>", lambda e: self._focus_search() if self._keys_here() else None, add="+")
         ui.root.bind("<Control-z>", self._undo_key, add="+")
-        ui.root.bind("<Alt-Left>", lambda e: self.reader.step(-1) if self.winfo_ismapped() else None, add="+")
-        ui.root.bind("<Alt-Right>", lambda e: self.reader.step(1) if self.winfo_ismapped() else None, add="+")
+        ui.root.bind("<Alt-Left>", lambda e: self.reader.step(-1) if self._keys_here() else None, add="+")
+        ui.root.bind("<Alt-Right>", lambda e: self.reader.step(1) if self._keys_here() else None, add="+")
         self._set_default_order()
+        self._restore_memory()
+        t.on_widths = self._remember
         self._update_chrome()
+
+    # ------------------------------------------------------------- what is remembered (10.6)
+    def _restore_memory(self):
+        """Put back the type filter, the search text and the column widths now; the tab and the sort wait for the
+        first load of a term base (the Next tab also for the first scan)."""
+        tb = self.table
+        mem = termsmemory.clean(self.ui.winstate.get(termsmemory.KEY), [c.key for c in tb.cols], TYPES)
+        if "widths" in mem:
+            tb.set_widths_state(mem["widths"])
+        if "type" in mem:
+            self.type_filter = mem["type"]
+            self.type_btn.set_text(mem["type"] + "  ▾")
+            self.type_btn.pack_forget()
+            self.type_btn.pack(side="right", before=self.sel_btn)
+        if "query" in mem:
+            self.search.set(mem["query"])
+            self.query = mem["query"]
+        self._restore = {k: mem[k] for k in ("tab", "sort") if k in mem} or None
+        self._restoring = False
+
+    def _remember(self):
+        """Write the tab, filter, search, sort and widths of the table to the window state."""
+        if self._restoring:
+            return
+        if self._remember_job is not None:
+            self.after_cancel(self._remember_job)
+            self._remember_job = None
+        tb = self.table
+        mem = {"tab": self.tab, "type": self.type_filter or "", "query": self.query.strip() and self.query,
+               "widths": tb.widths_state(),
+               "sort": termsmemory.sort_to_store(self.tab, tb.sort_key, tb.sort_desc,
+                                                 termlogic.default_order(self.tab))}
+        self.ui.winstate.set(termsmemory.KEY, {k: v for k, v in mem.items() if v})
+
+    def _remember_later(self):
+        if self._remember_job is not None:
+            self.after_cancel(self._remember_job)
+        self._remember_job = self.after(500, self._remember)
 
     # ------------------------------------------------------------- life
     def on_show(self):
@@ -235,9 +284,11 @@ class TermsStep(Step):
         self._loaded_path = s.path
         path, tag = s.path, s.tag
         self.busy = True
+        self.app.loadline.start("terms")
 
         def done(doc, path=path):
             self.busy = False
+            self.app.loadline.stop("terms")
             if self._loaded_path != path:
                 return
             self._cancel_scan()
@@ -247,9 +298,13 @@ class TermsStep(Step):
             self.table.marks = self.marks
             self._sync_language()
             self.entries = doc.entries()
-            self.tab = "new"
-            self.seg.set_value("new")
+            rs, self._restore = self._restore, None
+            self.tab = rs["tab"] if rs and rs.get("tab") in ("new", "known", "questions") else "new"
+            self._want_next = bool(rs and rs.get("tab") == "next")
+            self.seg.set_value(self.tab)
             self._set_default_order()
+            if rs and "sort" in rs:
+                self.table.sort_key, self.table.sort_desc = rs["sort"]["key"], rs["sort"]["desc"]
             self.refilter(keep=set())
             self.table.draw_head()
             if self.table.rows:
@@ -260,6 +315,7 @@ class TermsStep(Step):
 
         def failed(exc, path=path):
             self.busy = False
+            self.app.loadline.stop("terms")
             self._loaded_path = None
             message(self.ui, "The term base of this series cannot be read: %s" % exc)
 
@@ -317,8 +373,12 @@ class TermsStep(Step):
         return "break"
 
     # ------------------------------------------------------------- keys
+    def _keys_here(self) -> bool:
+        """The keys of this step work: it is the one on screen and no panel is open over it."""
+        return self.winfo_ismapped() and not self.ui.panel_open()
+
     def _undo_key(self, e):
-        if not self.winfo_ismapped() or isinstance(e.widget, tk.Entry):
+        if not self._keys_here() or isinstance(e.widget, tk.Entry):
             return None
         self.undo()
         return "break"
@@ -339,6 +399,7 @@ class TermsStep(Step):
         else:
             tb.sort_key, tb.sort_desc = col, col == "count"
         self.refilter()
+        self._remember()
 
     def refilter(self, keep=None):
         tb = self.table
@@ -352,16 +413,40 @@ class TermsStep(Step):
         keep = set(id(t) for t in tb.selected_rows()) if keep is None else keep
         tb.set_rows(out, keep, keep_view=True)
         self._update_chrome()
+        self._update_status()
 
     def _tab_changed(self, v):
         self.tab = v
         self._set_default_order()
         self.refilter()
         self.table.draw_head()
+        self._remember()
 
     def _search_changed(self, s):
         self.query = s
         self.refilter()
+        if not self._restoring:
+            self._remember_later()
+
+    # ------------------------------------------------------------- the small state word next to the search (10.3)
+    def _status_text(self) -> str:
+        if self.scanning:
+            return "Scanning %d %%" % int(self.scan_frac * 100)
+        if self.query.strip() and self.doc is not None and not self.table.rows:
+            return "0"
+        return ""
+
+    def _update_status(self):
+        text = self._status_text()
+        if self.status.cget("text") != text:
+            self.status.configure(text=text)
+
+    def _status_tip(self):
+        if self.scanning:
+            return tips.TERMS_SCANNING
+        if self.status.cget("text") == "0":
+            return tips.TERMS_NO_MATCH
+        return None
 
     def _open_types(self):
         items = ["All types"] + TYPES
@@ -375,8 +460,9 @@ class TermsStep(Step):
             self.type_filter = None if item == "All types" else item
             self.type_btn.set_text(item + "  ▾")
             self.type_btn.pack_forget()
-            self.type_btn.pack(side="right")
+            self.type_btn.pack(side="right", before=self.sel_btn)
             self.refilter()
+            self._remember()
             self.table.body.focus_set()
         self.ui.popup.show(root, x - self.cw * 6, y, self.cw * 22, items, cur, pick,
                            on_cancel=lambda: self.table.body.focus_set(), openers=(self.type_btn,))
@@ -587,9 +673,12 @@ class TermsStep(Step):
             return
         doc = self.doc
         self.busy = True
+        self._import_state("Importing…")
 
         def done(rep):
-            self.busy = False
+            if self.doc is not doc:
+                self._import_state("")
+                return
             self.entries = doc.entries()
             self.last_import = rep
             self._invalidate_selection()
@@ -600,12 +689,51 @@ class TermsStep(Step):
             self.table.draw_head()
             if self.table.rows:
                 self.table.select_index(0)
+            self._count_in_book(doc)
 
         def failed(exc):
-            self.busy = False
+            self._import_state("")
             message(self.ui, "The glossary could not be imported: %s" % exc)
 
         self.ui.worker.submit(lambda ctx: doc.import_files(files), on_result=done, on_error=failed, lane="bulk")
+
+    def _import_state(self, text: str) -> None:
+        """The Import button shows what the import is doing, or goes back to `Import` (text empty, busy off)."""
+        self.importing = text
+        if not text:
+            self.busy = False
+            self.app.loadline.stop("import")
+        else:
+            self.app.loadline.start("import")
+        self.import_btn.set_text(text or "Import")
+        self._update_chrome()
+
+    def _count_in_book(self, doc) -> None:
+        """After an import: read the open book to fill Count and the chapters of the imported terms. A failure
+        leaves the imported terms as they are and says so."""
+        s, book = self.app.series, self.app.book
+        if s is None or not book:
+            self._import_state("")
+            return
+        self._import_state("Scanning…")
+        path = s.path
+
+        def done(_n):
+            if self.doc is not doc:
+                self._import_state("")
+                return
+            self._import_state("")
+            self.entries = doc.entries()
+            self._invalidate_selection()
+            self.refilter(keep=set(id(t) for t in self.table.selected_rows()))
+
+        def failed(exc):
+            self._import_state("")
+            message(self.ui, "The book could not be read to count the imported terms: %s. The terms were "
+                    "imported; Count stays empty." % exc)
+
+        self.ui.worker.submit(lambda ctx: model.fill_seen_task(ctx, doc, path, book), on_result=done, on_error=failed,
+                              lane="bulk")
 
     def export_base(self):
         if self.doc is None:
@@ -782,17 +910,23 @@ class TermsStep(Step):
                 self.scanning = False
                 self.scanbar_update()
                 self.refilter(keep=set())
+                if self._want_next:
+                    self._want_next = False
+                    self.show_next()
 
         def failed(exc):
             if fr is self.fr:
                 self.scanning = False
                 self.scanbar_update()
+                message(self.ui, "The book could not be scanned for names: %s. The term table is still usable." % exc)
 
         self._scan_token = self.ui.worker.submit(lambda ctx: model.frontier_scan_task(ctx, fr, force),
                                                  on_item=item, on_result=done, on_error=failed, lane="frontier")
 
     def scanbar_update(self) -> None:
         bar = self.scanbar
+        (self.app.loadline.start if self.scanning else self.app.loadline.stop)("scan")
+        self._update_status()
         if not self.scanning:
             if bar.winfo_ismapped():
                 bar.pack_forget()

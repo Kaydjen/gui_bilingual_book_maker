@@ -59,6 +59,7 @@ class TranslateStep(Step):
         self.pending_confirm = False
         self._terms_token = None
         self._tick_job = None
+        self._book_job = None
         self._tick_n = 0
         self._quota = model.Quota()
         self._est = None
@@ -185,6 +186,9 @@ class TranslateStep(Step):
 
     # ------------------------------------------------------------- life
     def on_show(self):
+        if self._book_job is not None:
+            self.after_cancel(self._book_job)
+            self._book_job = None
         self.refresh_all()
 
     def on_language(self):
@@ -203,7 +207,15 @@ class TranslateStep(Step):
             self._show_sample_rows()
 
     def on_book(self):
-        self.refresh_all()
+        """The volume changed: the job and the numbers are read a moment later, so that the opening of a big volume
+        does not hold the window (a series of 4000 chapters has other work to do in this turn)."""
+        if self._book_job is None:
+            self._book_job = self.after(25, self._book_now)
+
+    def _book_now(self):
+        self._book_job = None
+        if self.winfo_exists():
+            self.refresh_all()
 
     def on_selection(self):
         self._update_controls()

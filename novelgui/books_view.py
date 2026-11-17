@@ -100,7 +100,7 @@ class ChapterTable(VTable):
         bx0, bx1 = x + self.pad, x + w - self.pad
         bh = max(4, int(self.rh * 0.2))
         y0 = y + mid - bh / 2
-        sel = self.hover is not None and self.rows[self.hover] is row
+        sel = self.hover is not None and 0 <= self.hover < len(self.rows) and self.rows[self.hover] is row
         c.create_rectangle(bx0, y0, bx1, y0 + bh, fill=S4 if (sel or self.index_of(row) in self.sel) else TRACK,
                            outline="")
         span = bx1 - bx0
@@ -211,8 +211,9 @@ class BooksStep(Step):
         lb.pack(fill="x", pady=(self.gap, 0))
         self.add_btn = Pill(lb, "Add book", self.add_book, ui.font)
         self.add_btn.pack(side="left")
-        attach_tip(self.add_btn, ui.tip, lambda e: "Add an EPUB file as a new series or as another volume of the "
-                   "selected series. The file is copied into the series folder.")
+        attach_tip(self.add_btn, ui.tip, lambda e: tips.ADDING if not self.add_btn.enabled else
+                   "Add an EPUB file as a new series or as another volume of the selected series. The file is "
+                   "copied into the series folder.")
 
         right = tk.Frame(self.main, bg=BG)
         right.pack(side="left", fill="both", expand=True)
@@ -256,6 +257,11 @@ class BooksStep(Step):
         elif self.app.book:
             self.start_scan()   # logs may have changed since the step was last shown
         self.table.body.focus_set()
+
+    def ensure_loaded(self) -> None:
+        """Read the series of the library without showing this step (the app starts on another screen)."""
+        if self.app.library and not self.series_list and not self.loading_series:
+            self.reload_series()
 
     def library_changed(self, select_path: str | None = None) -> None:
         """The app took another folder as the library: show it."""
@@ -519,8 +525,9 @@ class BooksStep(Step):
                          lambda _: self.reload_series(select_path=info.path))
         RenameDialog(self.ui, "Volume label", info.label_of(stem), check, done)
 
-    def _run_op(self, fn, on_ok, series_path=None, volume=None):
-        """Run a disk operation on the worker; an OpError (or any failure) opens a message panel."""
+    def _run_op(self, fn, on_ok, series_path=None, volume=None, on_end=None):
+        """Run a disk operation on the worker; an OpError (or any failure) opens a message panel. `on_end` runs
+        when the work is over, however it ended."""
         key = (series_path, volume) if series_path else None
         if key:
             self.app.op_begin(*key)
@@ -528,6 +535,8 @@ class BooksStep(Step):
         def end():
             if key:
                 self.app.op_end(*key)
+            if on_end:
+                on_end()
 
         def ok(res):
             end()
@@ -751,7 +760,7 @@ class BooksStep(Step):
 
     # ------------------------------------------------------------- add
     def add_book(self):
-        if not self.app.library:
+        if not self.app.library or not self.add_btn.enabled:
             return
         path = self.ui.dialogs.open_epub()
         if not path:
@@ -786,6 +795,7 @@ class BooksStep(Step):
     def _add_confirmed(self, res: dict, then=None):
         lib = self.app.library
         series_path = res.get("series")
+        self._adding(True)
 
         def done(r):
             self._want_volume = r.volume
@@ -796,7 +806,13 @@ class BooksStep(Step):
                 self.reload_series(select_path=r.series, after=then)
 
         self._run_op(lambda ctx: libraryops.add_book(lib, res["epub"], res["mode"], series_path, res.get("name", "")),
-                     done, series_path, None)
+                     done, series_path, None, on_end=lambda: self._adding(False))
+
+    def _adding(self, on: bool) -> None:
+        """While a book is copied in, its button shows `Adding…` and the thin line moves (10.1)."""
+        self.add_btn.set_text("Adding…" if on else "Add book")
+        self.add_btn.set_enabled(not on)
+        (self.app.loadline.start if on else self.app.loadline.stop)("add")
 
 
 def _short(s: str, n: int) -> str:

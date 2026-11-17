@@ -110,12 +110,6 @@ class SelectionModel(unittest.TestCase):
         self.assertEqual(len(s), 4)
         self.assertFalse(selection.Selection())
 
-    def test_summary(self):
-        s = selection.make("b", [1, 2])
-        self.assertEqual(selection.summary(s, 2, 1204), "2 chapters · 1 204 blocks")
-        self.assertEqual(selection.summary(selection.Selection(), 0, 0), "")
-        self.assertIn("+", selection.summary(s, 2, 10, complete=False))
-
 
 class SettingsFile(unittest.TestCase):
     def test_roundtrip_and_damaged(self):

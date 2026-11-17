@@ -20,6 +20,12 @@ def dark_text(master, ui, height: int = 3, editable: bool = True, bg=S1, **kw) -
                 highlightbackground=LINE, highlightcolor=S4, wrap="word", height=height, padx=pad,
                 pady=int(ui.ls * 0.3), insertbackground=BRIGHT, insertwidth=2, selectbackground=S4,
                 selectforeground="#ffffff", undo=editable, **kw)
+    t.bind("<Tab>", lambda e: ui.keys.tab(1))           # Tab leaves a text, it never types a tab (10.7)
+    t.bind("<Shift-Tab>", lambda e: ui.keys.tab(-1))
+    try:
+        t.bind("<ISO_Left_Tab>", lambda e: ui.keys.tab(-1))
+    except tk.TclError:
+        pass
     return t
 
 
@@ -55,13 +61,14 @@ class PromptEditor(Modal):
         self.name.set(name)
         tk.Label(body, text="Text", bg=S2, fg=DIM, font=f, anchor="w").pack(anchor="w", padx=pad, pady=(gap, 2))
         self.text = dark_text(body, ui, height=16, bg=S1)
-        self.text.configure(width=int(ui.cw * 0.9 * 12))
+        self.text.configure(width=76)           # characters: the same width in cw units at every scale
         self.text.pack(fill="both", expand=True, padx=pad)
         self.text.insert("1.0", text)
         row = tk.Frame(body, bg=S2)
         row.pack(fill="x", padx=pad, pady=(gap, 0))
         self.save_btn = Pill(row, "Save", self._save, f, kind="accent", bg=S2)
         self.save_btn.pack(side="right")
+        self.main = self.save_btn
         Pill(row, "Cancel", self._cancel, f, kind="dim", bg=S2).pack(side="right", padx=(0, gap // 2))
         attach_tip(self.save_btn, ui.tip, lambda e: None if self.save_btn.enabled else (self._err or "Give the prompt a name."))
         attach_tip(self.text, ui.tip, lambda e: (

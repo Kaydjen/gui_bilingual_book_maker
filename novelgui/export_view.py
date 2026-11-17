@@ -172,6 +172,7 @@ class ResultPanel(Modal):
             self.show_btn = Pill(btns, "Show in folder", self._show, f, kind="dim", bg=S2)
             self.show_btn.pack(side="right", padx=(0, ui.ls // 2))
         self.close_btn = close
+        self.main = close
         self.show()
         close.focus_set()
 
@@ -264,7 +265,10 @@ class ExportStep(Step):
         self._src_key = None
         if self.winfo_ismapped():
             self._lookup_source()
-        self.refresh()
+            self.refresh()
+        else:
+            if self.list.rows:
+                self.list.set_rows([], None)    # the pieces are computed when the step is shown (4000 chapters)
 
     def on_language(self) -> None:
         self._update_buttons()

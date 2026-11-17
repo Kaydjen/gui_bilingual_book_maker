@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from . import keystore, model, platform, tips
+from . import keystates, keystore, model, platform, tips
 from .dialog import Modal
 from .settings import DEFAULT_MODEL, old_data_dir
-from .theme import BG, BRIGHT, DIM, FAINT, S1, S2, S4, TEXT
+from .theme import ACCENT, BG, BRIGHT, DIM, FAINT, S1, S2, S4, TEXT
 from .tooltip import attach_tip
 from .translate_parts import dark_text
 from .vtable import Col, VTable
@@ -23,6 +23,24 @@ class _List(VTable):
         x, w = cols["v"]
         c.create_text(x + self.pad, y + mid, text=self.fit(self.shown(row), w - 2 * self.pad), anchor="w",
                       font=self.font, fill=TEXT)
+
+
+class _StateList(_List):
+    """A list whose rows carry a state word at the right edge: `state(row)` gives (text, red)."""
+
+    def __init__(self, master, ui, shown, state):
+        super().__init__(master, ui, shown)
+        self.state = state
+
+    def draw_cells(self, c, row, cols, y, mid):
+        x, w = cols["v"]
+        text, red = self.state(row)
+        tw = self.font.measure(text) + 2 * self.pad if text else 0
+        c.create_text(x + self.pad, y + mid, text=self.fit(self.shown(row), w - 2 * self.pad - tw), anchor="w",
+                      font=self.font, fill=TEXT)
+        if text:
+            c.create_text(x + w - self.pad, y + mid, text=text, anchor="e", font=self.font,
+                          fill=ACCENT if red else DIM)
 
 
 def model_list(settings) -> list:
@@ -50,7 +68,10 @@ class SettingsPanel(Modal):
 
         # keys
         keys_label = label("Keys")
-        self.keys = _List(body, ui, keystore.mask)
+        self.key_state: dict = {}           # key -> keystates.KeyState, filled by a worker task
+        self.missing: set = set()           # models the pools hold as not found
+        self._states_token = None
+        self.keys = _StateList(body, ui, keystore.mask, self._key_word)
         self.keys.body.configure(width=width, height=int(ui.ls * 5.2))
         self.keys.pack(fill="x", padx=pad)
         self.keys.on_changed = self._update
@@ -63,6 +84,7 @@ class SettingsPanel(Modal):
         self.import_btn = Pill(row, "Import keys from the old app", self._import_keys, f, kind="dim", bg=S2)
         paste_label = label("Add keys")
         self.paste = dark_text(body, ui, height=3, editable=True, bg=S1)
+        self.paste.configure(width=56)          # as wide as the lists above it
         self.paste.pack(fill="x", padx=pad)
         self.paste.bind("<KeyRelease>", lambda e: self._update())
         arow = tk.Frame(body, bg=S2)
@@ -72,9 +94,7 @@ class SettingsPanel(Modal):
         paste_tip = lambda e: (
             "Paste one key, or several, one per line, and press Add. Text that is not a key is left out.",
             [("Stored in", "the app data folder"), ("Shown as", "dots and the last 4 characters")])
-        keys_tip = lambda e: (
-            "Your API keys. Each key from a separate Google project brings its own daily quota. A key is never "
-            "shown in full.", [("Stored in", "keys.json"), ("Never", "in a series or a log")])
+        keys_tip = lambda e: tips.KEYS_LIST
         attach_tip(self.paste, ui.tip, paste_tip)
         attach_tip(paste_label, ui.tip, paste_tip)
         attach_tip(self.keys, ui.tip, keys_tip)
@@ -85,7 +105,8 @@ class SettingsPanel(Modal):
 
         # models
         models_label = label("Models")
-        self.mlist = _List(body, ui, lambda m: m)
+        self.mlist = _StateList(body, ui, lambda m: m, lambda m: ("not found", False) if m in self.missing
+                                else ("", False))
         self.mlist.body.configure(width=width, height=int(ui.ls * 3.2))
         self.mlist.pack(fill="x", padx=pad)
         self.mlist.on_changed = self._update
@@ -101,8 +122,9 @@ class SettingsPanel(Modal):
         self.model_del = Pill(mrow, "Remove", self._remove_model, f, kind="dim", bg=S2)
         self.model_del.pack(side="left", padx=(gap // 2, 0))
         models_tip = lambda e: (
-            "The models to translate with, in order of preference. The first one is used until its quota is gone.",
-            [("Default", DEFAULT_MODEL), ("Order", "top is used first")])
+            "The models to translate with, in order of preference. The first one is used until its quota is gone. "
+            "`not found` means the service does not know the name: a job stops until it is changed.",
+            [("Default", DEFAULT_MODEL), ("Order", "top is used first"), ("Applies", "from the next start")])
         attach_tip(self.mlist, ui.tip, models_tip)
         attach_tip(models_label, ui.tip, models_tip)
 
@@ -160,10 +182,55 @@ class SettingsPanel(Modal):
 
         close = tk.Frame(body, bg=S2)
         close.pack(fill="x", padx=pad, pady=(gap, 0))
-        Pill(close, "Close", self.close, f, bg=S2).pack(side="right")
+        self.main = Pill(close, "Close", self.close, f, bg=S2)
+        self.main.pack(side="right")
+        self._dim_tips(ui)
         self._built = True
         self._update()
         self.show()
+        self._load_states()
+
+    def _dim_tips(self, ui):
+        """A button that is dim says why (the tooltip of a disabled control, 10.1)."""
+        def why(btn, text):
+            attach_tip(btn, ui.tip, lambda e: None if btn.enabled else text())
+        why(self.remove_btn, lambda: "Choose the keys to remove in the list first.")
+        why(self.add_btn, lambda: "Paste a key into the box above first.")
+        why(self.model_add, lambda: "Type a model name in the field next to this button first.")
+        why(self.model_up, lambda: "Choose a model in the list first." if not self.mlist.selected_rows()
+            else "This model is already the first one.")
+        why(self.model_del, lambda: "Choose a model in the list first." if not self.mlist.selected_rows()
+            else "The last model cannot be removed.")
+
+    # ------------------------------------------------------------- key and model states (11.2, 11.4)
+    def _key_word(self, key):
+        st = self.key_state.get(key)
+        if st is None:
+            return "", False
+        return keystates.text(st), st.kind == keystates.INVALID
+
+    def _load_states(self):
+        """Read the pool files of the library on the worker thread; the rows show their state when it arrives."""
+        lib = self.app.library
+        if self._states_token is not None:
+            self._states_token.cancel()
+        keys, models = list(self.app.keystore.keys), list(self.models)
+        if lib is None or not keys:
+            self.key_state, self.missing = {}, set()
+            self._redraw_states()
+            return
+
+        def done(res):
+            if not self.is_open:
+                return
+            self.key_state, self.missing = res
+            self._redraw_states()
+        self._states_token = self.ui.worker.submit(lambda ctx: model.key_states_task(ctx, lib, keys, models),
+                                                   on_result=done, lane="fast")
+
+    def _redraw_states(self):
+        self.keys.refresh()
+        self.mlist.refresh()
 
     # ------------------------------------------------------------- keys
     def _update(self):
@@ -185,6 +252,7 @@ class SettingsPanel(Modal):
     def _refresh_keys(self):
         self.keys.set_rows(list(self.app.keystore.keys))
         self._update()
+        self._load_states()
         self.app.keys_changed()
 
     def _add_keys(self):
@@ -208,6 +276,7 @@ class SettingsPanel(Modal):
         self.settings.set("models", list(self.models))
         self.mlist.set_rows(list(self.models))
         self._update()
+        self._load_states()
         self.app.keys_changed()
 
     def _add_model(self):
