@@ -12,6 +12,8 @@ import os
 import re
 from pathlib import Path
 
+from . import atomic
+
 KEYS_FILE = "keys.json"
 MIN_KEY_LEN = 16
 _SPLIT = re.compile(r"[\s,;]+")
@@ -34,14 +36,7 @@ def mask(key: str) -> str:
 
 
 def _atomic(path: Path, text: str) -> bool:
-    tmp = path.with_name(path.name + ".tmp")
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(text, encoding="utf-8")
-        os.replace(tmp, path)
-        return True
-    except OSError:
-        return False
+    return atomic.try_write_text(path, text)
 
 
 class KeyStore:
