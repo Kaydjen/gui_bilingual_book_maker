@@ -1,6 +1,8 @@
 import QtQuick
 import QtQuick.Window
 
+// qmllint disable unqualified
+
 Window {
     id: root
     objectName: "shell"
