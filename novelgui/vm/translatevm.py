@@ -64,6 +64,7 @@ class TranslateVM(QObject):
     checkChanged = Signal()
     openFolderRequested = Signal(str)
     promptDeleted = Signal(str)             # a prompt was deleted: the screen shows `Deleted <name>` with Undo
+    runTouched = Signal()                   # the run changed (a state or a throttled snapshot): Export's `Translating` row
 
     def __init__(self, app, lanes, books, crunch=None, terms=None, parent=None):
         super().__init__(parent)
@@ -1043,6 +1044,7 @@ class TranslateVM(QObject):
         elif starting:
             self._load_series(job_only=True)
         self._validate_panel()
+        self.runTouched.emit()
 
     def run_progress(self, run) -> None:
         """A throttled snapshot of the running job (at most every 100 ms): the changed rows of the shown chapters,
@@ -1071,6 +1073,7 @@ class TranslateVM(QObject):
         self._compute_time()
         self._compute_queue()
         self._push_info()
+        self.runTouched.emit()
 
     def message(self, text: str) -> None:
         self.app.message = text
@@ -1125,7 +1128,7 @@ class TranslateVM(QObject):
             return
         path = rc.tracked_series()
         view = self._tracked[1] if self._tracked[0] == path else (self._job if path == self._path else None)
-        blocked = self._reach.first and bool(self._positions) and self.app.screen == "translate"
+        blocked = self._reach.first and bool(self._positions) and self.app.screen in ("translate", "export")   # Export shows it too (mock)
         info = run_info(rc, terms_blocked=blocked, view=view)
         key = (dataclasses.replace(info, left_s=None), round_left(info.left_s))
         if key != self._last_info_key:

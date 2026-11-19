@@ -6,7 +6,9 @@ in batches.
 
 - Start: on first use; writes wait until the process has started.
 - Cancel: the process is killed (that releases every book it holds open) and started again for the tasks that
-  are still waiting; a cancelled or superseded task never reports.
+  are still waiting; a cancelled or superseded task never reports. A task submitted with `keep=True` (a file write:
+  Export) is never killed for somebody else: while it is in flight another task's cancel or `release` only drops
+  that task's answer, so a build that already wrote its file is not sent again.
 - Idle: the child exits after `idle` seconds without work and says so (`bye`); tasks sent meanwhile are resent.
 - Crash or kill from outside: every task in flight gets `on_error(CrunchError)`; the next use starts a new one.
 """
@@ -47,7 +49,7 @@ class CrunchToken(Token):
 
 
 class _Task:
-    __slots__ = ("id", "task", "args", "on_result", "on_error", "on_item", "token", "group", "gen", "sent", "want")
+    __slots__ = ("id", "task", "args", "on_result", "on_error", "on_item", "token", "group", "gen", "sent", "want", "keep")
 
     def __init__(self, tid, task, args, on_result, on_error, on_item, token, group, gen):
         self.id, self.task, self.args = tid, task, args
@@ -55,6 +57,7 @@ class _Task:
         self.token, self.group, self.gen = token, group, gen
         self.sent = False
         self.want = None
+        self.keep = False
 
 
 def default_python() -> str:
@@ -85,7 +88,7 @@ class CrunchClient(QObject):
 
     # ------------------------------------------------------------- public
     def submit(self, task: str, args: dict | None = None, on_result=None, on_error=None, on_item=None,
-               group: str | None = None) -> CrunchToken:
+               group: str | None = None, keep: bool = False) -> CrunchToken:
         tid = self._next
         self._next += 1
         token = CrunchToken(self, tid)
@@ -97,9 +100,10 @@ class CrunchClient(QObject):
             gen = (prev[0] + 1) if prev else 1
             self._gens[group] = (gen, token)
         t = _Task(tid, task, dict(args or {}), on_result, on_error, on_item, token, group, gen)
+        t.keep = keep
         self._pending[tid] = t
         self._ensure()
-        if self._ready:
+        if self._ready and not t.sent:             # `started` may already have fired inside `_ensure` and sent it
             self._send(t)
         return token
 
@@ -195,7 +199,7 @@ class CrunchClient(QObject):
         """Kill the helper now and wait for it: every zip handle it holds goes with it (a move or a delete of a series needs
         them closed on Windows). A task still in flight is sent again to a fresh helper."""
         p = self._proc
-        if p is None:
+        if p is None or self._protected():
             return
         self._kill()
         p.waitForFinished(2000)
@@ -208,11 +212,16 @@ class CrunchClient(QObject):
         t = self._pending.pop(tid, None)
         if t is None or not t.sent:
             return
+        if not t.keep and self._protected():
+            return                                  # its answer is dropped; a file write in flight is not killed for it
         self._kill()
         for other in self._pending.values():
             other.sent = False
         if self._pending:
             self._ensure()
+
+    def _protected(self) -> bool:
+        return any(o.keep and o.sent for o in self._pending.values())
 
     def _stderr(self, p: QProcess) -> None:
         data = bytes(p.readAllStandardError().data()).decode("utf-8", "replace").strip()

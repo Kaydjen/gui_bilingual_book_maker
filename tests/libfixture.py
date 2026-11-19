@@ -2,7 +2,8 @@
 
 spec of a series: {"name", "folder" (default: the name), "target" ("ru:Russian"), "books": [book], "broken": "text" (series.json
 is written damaged), "labels": {stem: label}}; spec of a book: {"stem", "chapters": n, "start": first title number (default 1),
-"titles": "numbered" | "named" (no numbers in the titles) | "mixed", "translated": k (the first k chapters fully translated),
+"titles": "numbered" | "named" (no numbers in the titles) | "mixed", "translated": k (the first k chapters fully translated), "done": [[first number, last number], ...] (chapters by title
+number that are fully translated, any places: the pieces of Export),
 "partly": index of a chapter with the first half of its blocks translated, "paras": paragraphs per chapter (default 3),
 "missing": True (the series.json lists nothing, the file is simply absent: not built), "mentions": {title number: [names]} (the
 paragraphs of that chapter name them one by one; the Terms scan and the reader find them)}.
@@ -53,7 +54,11 @@ def write_logs(series_path: Path, book: dict) -> None:
     from novelcore import Book
     from novelgui.facade.books import log_file
     done, partly = int(book.get("translated", 0)), book.get("partly")
-    if not done and partly is None:
+    start = int(book.get("start", 1))
+    ks = set(range(done))
+    for a, b in book.get("done", []):
+        ks.update(range(int(a) - start, int(b) - start + 1))
+    if not ks and partly is None:
         return
     bk = Book.open(series_path / "books" / (book["stem"] + ".epub"))
     try:
@@ -61,10 +66,10 @@ def write_logs(series_path: Path, book: dict) -> None:
             if ch.is_toc:
                 continue
             k = ch.index - 1            # position among the real chapters (the first spine page is the contents)
-            if k >= done and k != partly:
+            if k not in ks and k != partly:
                 continue
             blocks = bk.blocks(ch)
-            take = blocks if k < done else blocks[:max(1, len(blocks) // 2)]
+            take = blocks if k in ks else blocks[:max(1, len(blocks) // 2)]
             f = log_file(series_path, book["stem"], ch.index, ch.href)
             f.parent.mkdir(parents=True, exist_ok=True)
             with open(f, "w", encoding="utf-8") as fh:

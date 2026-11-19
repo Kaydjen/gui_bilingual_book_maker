@@ -3,11 +3,12 @@ import QtQuick
 
 // The floating bottom bar, style B: one lifted capsule cut into segments by thin lines; with `sat` the round
 // `•••` button hangs beside it and the capsule stays centred alone. segment: {text, kind, id, tip}; kind =
-// "main" (bright, bold) | "" (dim) | "accent" (red) | "off" (faint).
+// "main" (bright, bold) | "" (dim) | "accent" (red) | "off" (faint); `busy` puts a small spinner before the text.
 Item {
     id: bar
 
     property var segments: []
+    property real segWidth: 0                   // > 0: every segment is this wide (Export: two buttons of equal width)
     property bool sat: false
     property var satTip: ""
     property alias satItem: satButton
@@ -38,7 +39,7 @@ Item {
                     readonly property bool off: kind === "off"
                     readonly property real progress: modelData.progress === undefined ? -1 : modelData.progress
                     readonly property bool fixed: kind === "off" || kind === "capt"
-                    width: label.implicitWidth + 32
+                    width: bar.segWidth > 0 ? bar.segWidth : label.implicitWidth + 32
                     height: strip.height
 
                     Rectangle {
@@ -78,6 +79,14 @@ Item {
                             height: parent.height
                             color: Theme.dim
                         }
+                    }
+                    Spinner {
+                        objectName: bar.objectName + "Spin" + seg.index
+                        visible: seg.modelData.busy === true
+                        size: 12
+                        x: label.x - 20
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: Theme.dim
                     }
                     HoverHandler { id: segHover; cursorShape: seg.fixed ? Qt.ArrowCursor : Qt.PointingHandCursor }
                     TapHandler { enabled: !seg.fixed; onTapped: bar.activated(seg.index, seg.modelData.id || "") }

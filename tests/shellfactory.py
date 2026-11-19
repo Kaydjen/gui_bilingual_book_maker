@@ -7,7 +7,7 @@ the fake server.
 
 data keys: failed_blocks [[chapter number, block, reason]], norun (the Translate runner is a stub, tests/translatedrive.py), library ("ready" | "first" | "missing"), keys, models, pace, keep_awake, screen, run (RunInfo fields), custom
 (bool: the custom frame), edge (bool), forceButtons, log [[text, series, problem]], pool {"<key index>": [kind, +seconds]},
-tray (bool: the tray exists), tray_seen, api.
+tray (bool: the tray exists), tray_seen, api, exports [[series, book, first number, last number, "2026-11-03", file]] (the export history).
 """
 
 from __future__ import annotations
@@ -51,6 +51,11 @@ def make(data):
             from tests import libfixture        # one small book: a series without books would show the red `Add book`
             libfixture.build(lib, [{"name": "Knights", "books": [{"stem": "Book 1", "chapters": 3, "paras": 1}]}])
             (lib / "Knights" / ".state").mkdir(exist_ok=True)
+        for series, book, first, last, iso, file in data.get("exports", []):        # chapters exported before the window opened
+            from novelgui.facade import exports as fexports
+            from tests import translatedemo
+            fexports.add_history(lib / series, book, range(translatedemo.position(first), translatedemo.position(last) + 1),
+                                 file, iso)
         for number, block, reason in data.get("failed_blocks", []):        # blocks that failed before the window opened
             from tests import translatedemo
             translatedemo.write_failed_block(lib / "Knights", "Book 1", translatedemo.position(number), block, reason)
@@ -114,7 +119,8 @@ def make(data):
     shell = Shell()
     objects = {"shellVm": shell, "appVm": parts.app, "settingsVm": parts.settings_vm, "logVm": parts.log_vm,
                "frameVm": parts.frame, "booksVm": parts.books_vm, "addVm": parts.add_vm, "readerVm": parts.reader_vm,
-               "termsVm": parts.terms_vm, "translateVm": parts.translate_vm}
+               "termsVm": parts.terms_vm, "translateVm": parts.translate_vm,
+               "exportVm": parts.export_vm}
     extras = {
         "__close": parts.close,
         "tray": lambda: {"lines": parts.tray.lines, "actions": parts.tray.actions, "tooltip": parts.tray.tooltip,
@@ -152,7 +158,10 @@ def make(data):
         "termsTrash": lambda: [p.name for p in (data_dir / "local" / "terms_history").rglob("*.json.gz")],
     }
     from tests import translatedrive
-    extras.update(translatedrive.Drive(parts, lib, keys).extras())
+    tr_drive = translatedrive.Drive(parts, lib, keys)
+    extras.update(tr_drive.extras())
+    from tests import exportdrive
+    extras.update(exportdrive.Drive(parts, lib, tr_drive).extras())
     return objects, extras
 
 

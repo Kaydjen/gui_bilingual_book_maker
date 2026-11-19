@@ -14,5 +14,6 @@ ShellRoot {
     reader: readerVm
     terms: termsVm
     translate: translateVm
+    exporter: exportVm
     forceButtons: fake.forceButtons === true
 }

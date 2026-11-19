@@ -20,6 +20,7 @@ from ..settings import Settings
 from ..vm.addvm import AddVM
 from ..vm.appvm import AppVM
 from ..vm.booksvm import BooksVM
+from ..vm.exportvm import ExportVM
 from ..vm.readervm import ReaderVM
 from ..vm.logvm import LogVM
 from ..vm.settingsvm import SettingsVM
@@ -54,6 +55,7 @@ class Parts:
         self.books_vm = BooksVM(self.app, self.lanes, self.crunch, self.add_vm)
         self.terms_vm = TermsVM(self.app, self.lanes, self.books_vm, self.crunch, self.local)
         self.translate_vm = TranslateVM(self.app, self.lanes, self.books_vm, self.crunch, self.terms_vm)
+        self.export_vm = ExportVM(self.app, self.lanes, self.books_vm, self.crunch, self.translate_vm)
         # the ONE place that starts, watches and stops translations (window_spec 13.2); nothing starts by itself (13.13)
         self.run = RunControl(
             winstate=self.app.win, submit=self.lanes.submit, timer=qtclock.timer, sink=self.translate_vm,
@@ -69,10 +71,11 @@ class Parts:
     def context(self, shell) -> dict:
         return {"shellVm": shell, "appVm": self.app, "settingsVm": self.settings_vm, "logVm": self.log_vm,
                 "frameVm": self.frame, "booksVm": self.books_vm, "addVm": self.add_vm, "readerVm": self.reader_vm,
-                "termsVm": self.terms_vm, "translateVm": self.translate_vm}
+                "termsVm": self.terms_vm, "translateVm": self.translate_vm, "exportVm": self.export_vm}
 
     def close(self) -> None:
         self.translate_vm.shutdown()
+        self.export_vm.shutdown()
         self.app.flush()
         self.crunch.close()
         self.lanes.close()

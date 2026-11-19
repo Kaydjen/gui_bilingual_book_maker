@@ -67,6 +67,7 @@ class AppVM(QObject):
         self.rescan = lambda: None                  # 14.7: BooksSession.rescan once step 5 has one
         self.rescan_calls = 0
         self._run = sr.RunInfo()
+        self._export_ready = False
         self._quitting = False
         self._terms_scan = -1.0
         self._panel = ""
@@ -231,6 +232,16 @@ class AppVM(QObject):
     def termsState(self):
         return sr.header_states(self._run)["terms"]
 
+    @Property(str, notify=runChanged)
+    def exportState(self):
+        """`ready` while every chosen chapter is translated: the word Export glows once and stays bright (7.16)."""
+        return "ready" if self._export_ready else ""
+
+    def set_export_ready(self, ready: bool) -> None:
+        if bool(ready) != self._export_ready:
+            self._export_ready = bool(ready)
+            self.runChanged.emit()
+
     @Property(float, notify=runChanged)
     def termsScan(self):
         """Progress 0..100 of the book scan of the open series (a thin line under the word Terms), -1 when none runs."""
@@ -258,6 +269,7 @@ class AppVM(QObject):
         return {"gear": tips.GEAR, "min": tips.TITLE_MIN, "max": tips.TITLE_MAX, "restore": tips.TITLE_RESTORE,
                 "close": tips.TITLE_CLOSE, "context": _tip(tips.CONTEXT_LINE),
                 "books": _tip(tips.PATH_BOOKS), "terms": _tip(tips.PATH_TERMS), "export": _tip(tips.PATH_EXPORT),
+                "exportReady": _tip(tips.PATH_EXPORT_READY),
                 "termsRed": tips.PATH_TERMS_RED, "firstPath": _tip(tips.FIRST_START_FOLDER),
                 "missingFolder": tips.LIBRARY_NOT_FOUND_FOLDER, "keysHead": _tip(tips.KEYS_HEAD),
                 "keysPlus": _tip(tips.KEYS_PLUS), "modelsHead": tips.MODELS_HEAD, "paceRow": _tip(tips.PACE_ROW),
