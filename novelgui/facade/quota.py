@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from novelcore.pool import key_hash, read_day_exhausted, read_day_usage
+from novelcore.pool import day_return, key_hash, read_day_exhausted, read_day_usage
 
 from .. import keystates
 
@@ -16,6 +16,13 @@ DAILY_LIMITS = {"gemini-3.1-flash-lite": 500}
 
 
 # ---------------------------------------------------------------- quota
+def renew_at(now: float) -> float:
+    """The epoch the daily quota returns: next Pacific midnight by the core's rule, margin included, so the
+    `Renew at` of the Time popover and the `Resumes` word of the job read the same minute (works without a tz
+    database)."""
+    return day_return(now)
+
+
 @dataclass
 class Quota:
     keys: int = 0

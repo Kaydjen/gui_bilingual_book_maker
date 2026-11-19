@@ -27,7 +27,7 @@ import time
 import traceback
 
 from . import wire
-from .facade import books, checks, terms
+from .facade import books, checks, terms, translate
 from .lanes import Token, Want
 
 BATCH_ROWS = 500
@@ -60,6 +60,7 @@ TASKS = {
     "export": books.export_piece_task,
     "problems": checks.problems_task,
     "check": checks.check_task,
+    "gate": translate.gate_counts_task,
 }
 
 

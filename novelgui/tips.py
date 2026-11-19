@@ -264,3 +264,69 @@ UPDATE_FILE_OFF = "Comes with a later program change."
 READ_OFF = "Nothing of this chapter is translated yet."
 RENAME_TAKEN = "Another series already has this name."
 UNDO = "Brings it back from the program's trash, with its books, translations and glossary."
+
+
+# ---------------------------------------------------------------- Translate v9 (window 7.16, 14.15)
+TR_WORDS = {
+    "stopped": "The job stopped here. Continue goes on from this chapter.",
+    "key": "Google says a key is invalid. Fix it in Settings, then Continue.",
+    "model": "Google does not know the model name. Fix it in Settings, then Continue.",
+    "nopair": "No key and model pair can be used any more. Check them in Settings, then Continue.",
+    "disk": "The disk is full or a file cannot be written. Free some space, then Continue.",
+    "service": "The service kept failing. Continue later.",
+    "shut": "Google refused every request for half an hour. Continue later.",
+    "crash": "The job stopped on an error. `Copy details` in the ••• menu has the text; then Continue.",
+    "resumes": "Today's requests of all keys are used. The job goes on here at %s if the window stays open.",
+    "retrying": "A request failed (server busy, lost connection) and is repeated. Nothing to do.",
+    "paused": "Google refused for going too fast. All keys wait, then the job goes on by itself.",
+    "stopping": "Finishing the requests already sent (up to a minute), then the job stops here.",
+    "terms": "%d of this chapter's terms are not confirmed yet. Click: Terms on Blocking.",
+    "busy": "Another copy of the program, or its command line, is translating on this PC. One translation at a time.",
+    "problems": "Blocks that failed or that a check flagged. Click: the Problems tab.",
+}
+TR_TO_LOCKED_RUN = "The language is fixed while this series translates."
+TR_FROM = "The language of the book. Reserved: it is read from the file."
+TR_PROMPT = "How the model is asked to translate. Choose another or make a new one."
+TR_PROMPT_EDIT = "Edit the prompt %s. A saved prompt applies from the next chapter, also during a run."
+TR_PROMPT_DELETE = "Delete this prompt. The series that use it go back to Default."
+TR_SAMPLE = ("Translates the first %d blocks of the first selected chapter to try the prompt. The result opens in the "
+             "Sample tab; it is not saved as translation.")
+TR_SAMPLE_RUNNING = "Translating a sample: %d of %d blocks. Click: stop it."
+TR_SAMPLE_UNREVIEWED = ("Names and terms in this sample may differ from the real translation: %d terms of this chapter "
+                        "are not reviewed.")
+TR_SAMPLE_OFF = {"running": "A job is running or waiting: one at a time.", "keys": "Add keys first.",
+                 "language": "Choose the language first.", "selection": "Select chapters on Books first."}
+TR_TIME = "About how long chapters %s take. Click: paragraphs per request."
+TR_TIME_RUNNING = "Time left for this job. Paragraphs per request apply from the next start."
+TR_TIME_LOCKED = "Locked while this series translates: Stop, then Continue uses the new choice."
+TR_PER = {1: "One paragraph per request: the slowest, the most requests.",
+          5: "About 1000 characters, 10 paragraphs at most. No loss of quality was measured against 1.",
+          10: "About 2000 characters, 20 paragraphs at most. Not yet compared with 1 and 5 for quality."}
+TR_KEYS_HEAD = "Your Google API keys. Click: Settings at the keys."
+TR_LEFT = "All keys together: %s, 500 requests a day each."
+TR_TAB = {"chapters": "The chapters of the selection.", "problems": "Blocks that failed or that a check flagged.",
+          "queue": "Jobs that wait for their turn.", "sample": "The sample of the first chapter."}
+TR_TAB_RED = "%d blocks failed: they are left out of export until fixed."
+TR_START_WAIT = "Waiting for the name scan of the book: it decides which chapters can be translated now."
+TR_START_NEED_LANGUAGE = "Choose the language to translate into (To) first."
+TR_BAR = {"stop": "Finishes the requests in flight, then stops. Stops the queue too.",
+          "dont_resume": "The job will not go on by itself at %s. It stays stopped; Continue it later.",
+          "settings": "The key or the model was refused. Fix it in Settings; Continue then tries again.",
+          "open_folder": "Opens the series folder: free some space, then Continue.",
+          "more": "Job actions.", "continue_queue": "Starts the saved queue.",
+          "check": "Looks for leftover source language, odd lengths, terms not used and broken markup in the selected "
+                   "chapters. Never changes text.",
+          "stopping": "Finishing the requests already sent, then the job stops."}
+TR_CONTINUE = "Continue the job %s from the chapter it stopped at. Translated blocks are skipped."
+TR_CONTINUE_AFTER = "%s is translating. This goes into the queue and continues %s when it ends."
+TR_CONTINUE_KEYS = "Add an API key in the settings to continue."
+TR_PROBLEM = {"retry": "Translate this block again (it goes through the start rules: queued if a job runs).",
+              "keep": "Keep the source text in the translation.",
+              "ignore": "Hide this finding for good. The text stays as it is.",
+              "save": "Use the text you typed as the translation of this block.",
+              "failed": "The model gave no usable answer for this block."}
+TR_QUEUE_ROW = "Prompt %s · %s per request · %s.\nClick: open %s on Translate."
+TR_QUEUE_UP, TR_QUEUE_DOWN, TR_QUEUE_X = "Move up", "Move down", "Remove from the queue"
+TR_QUEUE_STOP = "Finishes the requests in flight, then stops. The queue waits."
+TR_QUEUE_WHY = "%s Click: Translate of %s."
+TR_NO_SERIES = "No book selected"

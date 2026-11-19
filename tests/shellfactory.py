@@ -107,7 +107,7 @@ def make(data):
     shell = Shell()
     objects = {"shellVm": shell, "appVm": parts.app, "settingsVm": parts.settings_vm, "logVm": parts.log_vm,
                "frameVm": parts.frame, "booksVm": parts.books_vm, "addVm": parts.add_vm, "readerVm": parts.reader_vm,
-               "termsVm": parts.terms_vm}
+               "termsVm": parts.terms_vm, "translateVm": parts.translate_vm}
     extras = {
         "__close": parts.close,
         "tray": lambda: {"lines": parts.tray.lines, "actions": parts.tray.actions, "tooltip": parts.tray.tooltip,
