@@ -10,6 +10,7 @@ Item {
     property var segments: []
     property bool sat: false
     property var satTip: ""
+    property alias satItem: satButton
     signal activated(int index, string id)
     signal satClicked()
 
@@ -35,6 +36,7 @@ Item {
                     required property var modelData
                     readonly property string kind: modelData.kind || ""
                     readonly property bool off: kind === "off"
+                    readonly property real progress: modelData.progress === undefined ? -1 : modelData.progress
                     readonly property bool fixed: kind === "off" || kind === "capt"
                     width: label.implicitWidth + 32
                     height: strip.height
@@ -63,6 +65,20 @@ Item {
                         font.weight: seg.kind === "main" ? Font.DemiBold : Font.Normal
                         color: seg.off ? Theme.faint : seg.kind === "accent" ? Theme.accent : (seg.kind === "main" || (segHover.hovered && !seg.fixed) ? Theme.bright : Theme.dim)
                     }
+                    Rectangle {
+                        objectName: bar.objectName + "Progress" + seg.index
+                        visible: seg.progress >= 0
+                        x: 16
+                        y: seg.height - 9
+                        width: seg.width - 32
+                        height: 2
+                        color: Theme.s3
+                        Rectangle {
+                            width: parent.width * Math.min(1, seg.progress)
+                            height: parent.height
+                            color: Theme.dim
+                        }
+                    }
                     HoverHandler { id: segHover; cursorShape: seg.fixed ? Qt.ArrowCursor : Qt.PointingHandCursor }
                     TapHandler { enabled: !seg.fixed; onTapped: bar.activated(seg.index, seg.modelData.id || "") }
                     TipArea { tip: seg.modelData.tip || "" }
@@ -71,6 +87,7 @@ Item {
         }
     }
     Sat {
+        id: satButton
         objectName: bar.objectName + "Sat"
         visible: bar.sat
         anchors.left: capsule.right

@@ -166,6 +166,12 @@ class Base(unittest.TestCase):
 class Ready(Base):
     specs = [demo.knights()]
 
+    def test_every_tip_the_screen_reads_exists(self):
+        keys = ("noSeries from prompt promptDelete keysHead queueUp queueDown queueRemove queueStop dontResume problemRetry "
+                "problemKeep problemIgnore problemSave problemFailed problemBusy promptText promptNothing more readOff").split()
+        tips = self.vm.tips
+        self.assertEqual([k for k in keys if not tips.get(k)], [])
+
     def test_ready_state(self):
         vm = self.vm
         self.assertEqual(vm.view, "ready")
@@ -844,7 +850,10 @@ class Queue(Base):
         row = vm.queue_rows.row(0)
         self.assertIn("stuck", row[5])
         self.assertIn("volume", row[6])
-        self.assertEqual(self.app.translateState, "")
+        self.assertEqual(self.app.translateState, "attention")          # 9.12: the header pulses red, the bar says Continue queue
+        vm.setTab("queue")
+        self.assertEqual(ids(vm), ["continue_queue"])
+        self.assertIn("Click: Translate of Delta", row[7], "the tooltip of a stuck row says where the click goes")
 
     def test_queue_replace_confirmation_for_a_series_already_queued(self):
         vm = self.vm
@@ -872,6 +881,7 @@ class QuotaWaitInTheQueue(Base):
         self.assertIn("wait", row[5])
         self.assertEqual(vm.tabs[1]["text"], "Queue 2")
         self.assertEqual(vm.bar[0]["id"], "queue")
+        self.assertIn("goes on here at " + row[1], row[7], "the tooltip of the head row names the return time")
         self.rc.sched.wait = None
 
 

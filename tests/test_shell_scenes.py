@@ -158,8 +158,9 @@ class Scenes(unittest.TestCase):
             self.assertEqual(r.ambient, 0)
             self.assertEqual(qh.count_red(r.image()), 0)
         run = {"running": True, "series": "Knights", "book": "Book 1", "terms_red": True}
-        for r in self.run_all("ShellScene", {"library": "ready", "screen": "translate", "run": run},
-                              [{"op": "wait", "ms": 1500}], tag="hdrrun"):
+        chosen = [{"name": "Knights", "target": "ru:Russian", "books": [{"stem": "Book 1", "chapters": 3, "paras": 1}]}]
+        for r in self.run_all("ShellScene", {"library": "ready", "screen": "translate", "run": run, "series": chosen, "keys": 1},
+                              [{"op": "wait", "ms": 1500}], tag="hdrrun"):          # a language and a key: Translate has no red of its own
             self.assertEqual(r.item("step_terms")["kind"], "red")
             self.assertEqual(r.item("step_terms")["value"], 1.0)             # three pulses done, it stays red
             self.assertEqual(r.item("step_translate")["kind"], "wave")

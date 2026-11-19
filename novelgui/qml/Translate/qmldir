@@ -1,0 +1,16 @@
+module Translate
+ChapterTab 1.0 ChapterTab.qml
+JobPanel 1.0 JobPanel.qml
+PromptDrop 1.0 PromptDrop.qml
+PromptPanel 1.0 PromptPanel.qml
+ProblemEditor 1.0 ProblemEditor.qml
+ProblemsTab 1.0 ProblemsTab.qml
+QueueRow 1.0 QueueRow.qml
+QueueTab 1.0 QueueTab.qml
+SampleTab 1.0 SampleTab.qml
+SkeletonBars 1.0 SkeletonBars.qml
+TimePop 1.0 TimePop.qml
+TopRow 1.0 TopRow.qml
+TrRow 1.0 TrRow.qml
+TrTabs 1.0 TrTabs.qml
+TranslateScreen 1.0 TranslateScreen.qml

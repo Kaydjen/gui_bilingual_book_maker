@@ -324,7 +324,8 @@ TR_PROBLEM = {"retry": "Translate this block again (it goes through the start ru
               "keep": "Keep the source text in the translation.",
               "ignore": "Hide this finding for good. The text stays as it is.",
               "save": "Use the text you typed as the translation of this block.",
-              "failed": "The model gave no usable answer for this block."}
+              "failed": "The model gave no usable answer for this block.",
+              "busy": "A job is translating this chapter now. Resolve it when the job ends."}
 TR_QUEUE_ROW = "Prompt %s · %s per request · %s.\nClick: open %s on Translate."
 TR_QUEUE_UP, TR_QUEUE_DOWN, TR_QUEUE_X = "Move up", "Move down", "Remove from the queue"
 TR_QUEUE_STOP = "Finishes the requests in flight, then stops. The queue waits."

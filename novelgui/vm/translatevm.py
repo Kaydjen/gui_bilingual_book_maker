@@ -190,7 +190,9 @@ class TranslateVM(QObject):
                 "problemRetry": t.TR_PROBLEM["retry"], "problemKeep": t.TR_PROBLEM["keep"],
                 "problemIgnore": t.TR_PROBLEM["ignore"], "problemSave": t.TR_PROBLEM["save"],
                 "promptText": "The instructions sent with every request. {language} is replaced by the series language.",
-                "promptNothing": "Nothing changed yet."}
+                "promptNothing": "Nothing changed yet.", "problemFailed": t.TR_PROBLEM["failed"],
+                "problemBusy": t.TR_PROBLEM["busy"], "dontResume": t.TR_BAR["dont_resume"] % "the return time",
+                "more": t.TR_BAR["more"], "readOff": t.READ_OFF}
 
     # ------------------------------------------------------------- following Books
     def _sync_later(self, *a) -> None:
@@ -828,12 +830,18 @@ class TranslateVM(QObject):
             job_terms=self._terms_now() if state == "waiting_terms" else 0, another_runs=bool(other),
             foreign=self._job.foreign, keys=self._keys_n() > 0, first_blocked=self._reach.first,
             language=bool(self._language()), translated=translated, reach=self._selection_text(),
-            check_reach=self._reach_text(checkable) if checkable else "", queue_restart=self._queue_restart(),
-            running_series=other, error_kind=self._error_kind(), stopping=bool(run and run.stopping))
+            check_reach=self._reach_text(checkable) if checkable else "",
+            queue_restart=self._queue_restart() or self._queue_stuck(), running_series=other, error_kind=self._error_kind(), stopping=bool(run and run.stopping))
 
     def _queue_restart(self) -> bool:
         rc = self.rc
         return bool(rc and len(rc.queue) and rc.sched.halted == jq.Scheduler.RESTART)
+
+    def _queue_stuck(self) -> bool:
+        """The queue stopped at an item that cannot start: `Continue queue` goes on from it once it is fixed."""
+        rc = self.rc
+        return bool(rc and len(rc.queue) and rc.run is None and rc.sched.wait is None
+                    and rc.sched.halted not in ("", jq.Scheduler.RESTART))
 
     def _compute_bar(self) -> None:
         if self._info is None or not self._book:
@@ -1184,7 +1192,9 @@ class TranslateVM(QObject):
             flags = ",".join(f for f, on in (("running", r.running), ("up", r.up), ("down", r.down),
                                              ("wait", r.dont_resume), ("stuck", bool(stuck) and k == head)) if on)
             why = stuck if "stuck" in flags else ""
-            data.append((r.series, r.start, r.name, r.detail, r.percent if r.running else -1, flags, why, r.tip))
+            tip = tips.TR_QUEUE_WHY % (why, r.name) if why else (
+                tips.TR_WORDS["resumes"] % r.start if r.dont_resume else r.tip)
+            data.append((r.series, r.start, r.name, r.detail, r.percent if r.running else -1, flags, why, tip))
         if data != self.queue_rows.rows:
             self.queue_rows.set_rows(data)
             self.queueChanged.emit()

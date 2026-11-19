@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 
 from .. import chapterlogic as cl
+from .. import jobqueue as jq
 from . import eta, translateplan as tp
 from .shellrules import RunInfo
 
@@ -33,9 +34,11 @@ def run_info(rc, terms_blocked: bool = False, now: float | None = None, view=_UN
     elif failed and view is _UNSET:
         kind = tp.error_kind(getattr(rc, "last_start_error", ""))
     needs = failed and (view is _UNSET or kind in ("key", "model"))
+    # the queue stopped at an item that cannot start: the user must fix it (9.12 `Queue stopped at an item`)
+    stuck = (not job) and wait is None and bool(len(rc.queue)) and rc.sched.halted not in ("", jq.Scheduler.RESTART)
     # a failure the user cannot fix (the service keeps failing) is a stopped job: no red pulse, no red tray line
     info = dict(running=job, waiting=wait is not None and not job, queued=len(rc.queue), failed=needs,
-                needs_user=needs, terms_red=terms_blocked or waiting_terms)
+                needs_user=needs or stuck, terms_red=terms_blocked or waiting_terms)
     if job:
         bdone, btotal, cdone, ctotal = rc.counts()
         left = eta.time_left(bdone - r.done_at_start, now - r.started, btotal - bdone)
@@ -44,6 +47,9 @@ def run_info(rc, terms_blocked: bool = False, now: float | None = None, view=_UN
     elif wait is not None:
         at, series = wait
         info.update(series=_name(series), wake=_clock(at), verb="Don't resume")
+    elif stuck and not failed:
+        item = rc.queue_items()[0]
+        info.update(series=_name(item.series), verb="Continue", reason=_short(rc.sched.why))
     elif failed or ind:
         series = rc.indicator_series()
         reason = FAILED_WORDS.get(kind) or (_short(view.error) if view not in (_UNSET, None) and view.error else "")

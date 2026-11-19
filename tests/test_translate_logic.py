@@ -156,9 +156,13 @@ class QueueTest(unittest.TestCase):
 
 
 class FakeRC:
-    def __init__(self, run=None, wait=None, ind="", queue=0):
+    def __init__(self, run=None, wait=None, ind="", queue=0, halted="", why=""):
         self.run, self._wait, self._ind, self.queue = run, wait, ind, [0] * queue
         self.last_start_error = "Key invalid"
+        self.sched = SimpleNamespace(halted=halted, why=why)
+
+    def queue_items(self):
+        return [SimpleNamespace(series="C:/lib/Delta")] * len(self.queue)
 
     def view(self):
         return "", "", []
@@ -214,6 +218,18 @@ class RunInfoTest(unittest.TestCase):
         self.assertFalse(info.failed or info.needs_user)          # a failure the user cannot fix: stopped, no red
         model = JobView("failed", "Book 1", (0, 1), error="x", dead=("model not found",))
         self.assertEqual(run_info(FakeRC(ind="Failed"), view=model).reason, "Model not found")
+
+    def test_a_queue_stopped_at_an_item_needs_the_user(self):
+        """9.12: the header pulses red and the tray line names the series; a restored queue (`Restart`) does not pulse."""
+        from novelgui import jobqueue as jq
+        info = run_info(FakeRC(queue=2, halted="Stopped", why="Delta: the volume Book 9 is gone."))
+        self.assertTrue(info.needs_user)
+        self.assertFalse(info.failed)
+        self.assertEqual((info.series, info.reason), ("Delta", "Delta: the volume Book 9 is gone."))
+        self.assertEqual(header_states(info)["translate"], "attention")
+        self.assertFalse(run_info(FakeRC(queue=2, halted=jq.Scheduler.RESTART)).needs_user)
+        self.assertFalse(run_info(FakeRC(queue=0, halted="Stopped")).needs_user, "nothing queued: nothing is stuck")
+        self.assertFalse(run_info(FakeRC(queue=2, halted="Stopped", wait=(NOW + 60, "C:/lib/Gamma"))).needs_user)
 
     def test_error_kinds(self):
         self.assertEqual(tp.error_kind("", ("invalid key",)), "key")
