@@ -264,6 +264,33 @@ class Scenes(unittest.TestCase):
             self.assertEqual(r.item("ddItem1")["text"], "Gamma")
             self.assertEqual(r.item("ddList")["count"], 5)
 
+    def test_add_series_enter_takes_the_typed_name(self):
+        files = [{"name": "Night Watch - Book 2.epub"}, {"name": "The Iron Crown - Book 1.epub"}]
+        open_pick = [WAIT, {"op": "py", "name": "openAdd"}, {"op": "wait", "ms": 1200}, {"op": "click", "name": "addSeries1"},
+                     {"op": "wait", "ms": 300}]
+        new = open_pick + [{"op": "type", "text": "Iron"}, {"op": "wait", "ms": 200}, {"op": "key", "key": "Return"},
+                           {"op": "wait", "ms": 300}]
+        for r in self.go("epubenter", self.add_data(files), new, scales=(1.0,)):
+            self.assertFalse(r.item("seriesPickerCard")["visible"])
+            self.assertEqual(r.item("addSeriesText1")["text"], "+ Iron")
+        known = open_pick + [{"op": "type", "text": "gamma"}, {"op": "wait", "ms": 200}, {"op": "key", "key": "Return"},
+                             {"op": "wait", "ms": 300}]
+        for r in self.go("epubenterknown", self.add_data(files), known, scales=(1.0,)):
+            self.assertEqual(r.item("addSeriesText1")["text"], "Gamma", "an existing name, not a new series")
+
+    def test_wheel_glides_and_middle_button_scrolls(self):
+        data = lib(knights(chapters=400, translated=0))
+        wheel = [WAIT, {"op": "wheel", "name": "tableList", "dy": -240}, {"op": "wait", "ms": 400}]
+        for r in self.go("wheel", data, wheel, scales=(1.0,)):
+            self.assertAlmostEqual(r.item("tableList")["contentY"], 240, delta=1, msg="two notches = 2 x 120 px")
+        mid = [WAIT, {"op": "midPress", "name": "tableList"}, {"op": "midMove", "name": "tableList", "dy": 120},
+               {"op": "wait", "ms": 500}, {"op": "dump", "name": "during"}, {"op": "midRelease", "name": "tableList", "dy": 120},
+               {"op": "wait", "ms": 200}]
+        for r in self.go("midscroll", data, mid, scales=(1.0,)):
+            self.assertTrue(r.after["during"]["tableScroll"]["auto"])
+            self.assertGreater(r.after["during"]["tableList"]["contentY"], 300)
+            self.assertFalse(r.item("tableScroll")["auto"], "a long press ends with the release")
+
     def test_add_one_new_series(self):
         acts = [WAIT, {"op": "py", "name": "openAdd"}, {"op": "wait", "ms": 1200}]
         for r in self.go("addnew", self.add_data([{"name": "Night Market.epub"}]), acts):

@@ -23,6 +23,7 @@ Message 1.0 Message.qml
 Panel 1.0 Panel.qml
 Pill 1.0 Pill.qml
 RowBase 1.0 RowBase.qml
+ScrollAssist 1.0 ScrollAssist.qml
 Sat 1.0 Sat.qml
 Segmented 1.0 Segmented.qml
 Shadow 1.0 Shadow.qml

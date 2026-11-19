@@ -78,5 +78,8 @@ Item {
                 }
             }
         }
+        ScrollAssist {
+            flickable: list
+        }
     }
 }

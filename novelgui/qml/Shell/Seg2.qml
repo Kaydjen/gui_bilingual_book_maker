@@ -14,7 +14,7 @@ Item {
     signal nameClicked()
     signal actionClicked()
 
-    implicitWidth: nameText.implicitWidth + 24 + 1 + actionText.implicitWidth + 24
+    implicitWidth: nameText.implicitWidth + 1 + actionText.implicitWidth   // implicitWidth of a Text holds its padding
     implicitHeight: 30
 
     Surface {

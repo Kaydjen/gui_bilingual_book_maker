@@ -106,6 +106,8 @@ def series_entries(infos, typed: str, current_new: str = "") -> list:
         if not t or t.lower() in i.name.lower():
             n = len(i.books)
             out.append({"text": i.name, "id": i.name, "note": "%d %s" % (n, "book" if n == 1 else "books")})
+    # an exact name goes first: Enter in the drop-down takes the first entry
+    out.sort(key=lambda e: 0 if t and e["id"].lower() == t.lower() else 1)
     return out
 
 

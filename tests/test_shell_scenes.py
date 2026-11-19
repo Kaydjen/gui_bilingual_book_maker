@@ -101,6 +101,21 @@ class Scenes(unittest.TestCase):
             self.assertEqual(r.item("savedLine")["text"], "Saved · applies from the next start")
             self.assertEqual(r.item("paceValue")["text"], "6")
 
+    def test_a_change_glows_in_place_and_says_saved_at_the_top(self):
+        acts = OPEN_SETTINGS + [{"op": "dump", "name": "before"},
+                                {"op": "call", "obj": "settingsVm", "fn": "setGraphics", "args": ["software"]},
+                                {"op": "wait", "ms": 150}]
+        for r in self.run_all("ShellScene", {"library": "ready"}, acts, tag="glow"):
+            card = r.item("settingsCard")
+            self.assertEqual(r.item("graphicsRow")["y"], r.after["before"]["graphicsRow"]["y"], "nothing shifts")
+            self.assertEqual(card["h"], r.after["before"]["settingsCard"]["h"])
+            self.assertLess(r.item("savedLine")["y"] - card["y"], 40, "the saved line sits at the top of the card")
+            self.assertTrue(r.item("savedLine")["text"].startswith("Saved"))     # graphics: "· applies from the next start"
+            self.assertGreater(r.item("settingsLog")["y"], r.item("graphicsRow")["y"], "Log is the last item of the content")
+            lib_w = r.item("libraryRow")["w"]
+            words = r.item("libraryRowName")["w"] + r.item("libraryRowAction")["w"] + 1
+            self.assertEqual(lib_w, words, "the two-segment control is as wide as its words")
+
     def test_keys_added_are_checked_against_the_fake_server_only(self):
         from tests.fake_api import FakeApi
         from tests.shellfactory import planted
