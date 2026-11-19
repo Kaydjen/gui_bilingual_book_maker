@@ -116,7 +116,8 @@ FocusScope {
                 Pill {
                     id: closeBtn
                     objectName: "panelClose"
-                    anchors.left: parent.left
+                    anchors.right: actionBtn.visible ? actionBtn.left : parent.right
+                    anchors.rightMargin: actionBtn.visible ? 8 : 0
                     text: panel.closeText
                     kind: "flat"
                     onClicked: panel.cancel()

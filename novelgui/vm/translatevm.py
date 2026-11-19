@@ -1449,8 +1449,14 @@ class TranslateVM(QObject):
         book = bookrows.book_label(self._info, v.book) if self._info and v.book else v.book
         reach = self._reach_text(tp.job_left(self._job_positions(), self._translated()))
         done = len(v.chapters) - len(tp.job_left(self._job_positions(), self._translated())) if v.chapters else 0
-        lines = [(name, True), (" · %s · %s will not be continued. " % (book, reach), False),
-                 ("The %d chapters translated so far stay." % max(0, v.chapters_done or done), False)]
+        kept = max(0, v.chapters_done or done)
+        if kept == 0:
+            tail = "Nothing is translated yet."
+        elif kept == 1:
+            tail = "The 1 chapter translated so far stays."
+        else:
+            tail = "The %d chapters translated so far stay." % kept
+        lines = [(name, True), (" · %s · %s will not be continued. " % (book, reach), False), (tail, False)]
         return {"title": "Discard the job?", "parts": self._parts(*lines), "ok": "Discard", "cancel": "Cancel"}
 
     def _open_panel(self, name: str, data: dict, valid=None, ok=None) -> None:
