@@ -10,11 +10,11 @@ MouseArea {
     id: assist
 
     property Flickable flickable: null
-    property real step: 120                  // px per wheel notch (about 4 rows)
+    property real step: 60                   // px per wheel notch (about 2 rows; owner 2026-11-19: 120 was too far)
     property real streakMs: 180              // a notch this soon after the last one (same way) continues the streak
-    property real gainStep: 0.4              // extra distance per notch of a streak
-    property real gainMax: 5
-    property real tau: 0.075                 // seconds: how fast the glide closes the gap to the target
+    property real gainStep: 0.6              // extra distance per notch of a streak
+    property real gainMax: 6
+    property real tau: 0.13                  // seconds: how fast the glide closes the gap to the target
     property bool gliding: false
     property real target: 0
     property real written: 0

@@ -280,9 +280,9 @@ class Scenes(unittest.TestCase):
 
     def test_wheel_glides_and_middle_button_scrolls(self):
         data = lib(knights(chapters=400, translated=0))
-        wheel = [WAIT, {"op": "wheel", "name": "tableList", "dy": -240}, {"op": "wait", "ms": 400}]
+        wheel = [WAIT, {"op": "wheel", "name": "tableList", "dy": -240}, {"op": "wait", "ms": 1000}]
         for r in self.go("wheel", data, wheel, scales=(1.0,)):
-            self.assertAlmostEqual(r.item("tableList")["contentY"], 240, delta=1, msg="two notches = 2 x 120 px")
+            self.assertAlmostEqual(r.item("tableList")["contentY"], 120, delta=1, msg="two notches = 2 x 60 px")
         mid = [WAIT, {"op": "midPress", "name": "tableList"}, {"op": "midMove", "name": "tableList", "dy": 120},
                {"op": "wait", "ms": 500}, {"op": "dump", "name": "during"}, {"op": "midRelease", "name": "tableList", "dy": 120},
                {"op": "wait", "ms": 200}]

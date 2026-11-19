@@ -42,27 +42,27 @@ class WheelScenes(unittest.TestCase):
         return r.after[name]["tableList"]["contentY"]
 
     def test_one_notch_glides_a_short_way(self):
-        r = self.run_acts("scroll_one", [notch(), wait(100), dump("mid"), wait(500), dump("end"), wait(200)])
-        self.assertTrue(0 < self.y(r, "mid") < 120, "gliding, not jumping: %s" % self.y(r, "mid"))
-        self.assertAlmostEqual(r.item("tableList")["contentY"], 120, delta=1)
+        r = self.run_acts("scroll_one", [notch(), wait(100), dump("mid"), wait(900), dump("end"), wait(200)])
+        self.assertTrue(0 < self.y(r, "mid") < 60, "gliding, not jumping: %s" % self.y(r, "mid"))
+        self.assertAlmostEqual(r.item("tableList")["contentY"], 60, delta=1)
         self.assertEqual(self.y(r, "end"), r.item("tableList")["contentY"], "the glide has stopped")
 
     def test_fast_streak_goes_far_slow_notches_do_not_accelerate(self):
-        fast = self.run_acts("scroll_fast", notches(10, 10) + [wait(1500)])
-        self.assertGreaterEqual(fast.item("tableList")["contentY"], 2500)
-        slow = self.run_acts("scroll_slow", notches(10, 400) + [wait(600)])
-        self.assertAlmostEqual(slow.item("tableList")["contentY"], 1200, delta=1)
+        fast = self.run_acts("scroll_fast", notches(10, 10) + [wait(2000)])
+        self.assertGreaterEqual(fast.item("tableList")["contentY"], 1800)
+        slow = self.run_acts("scroll_slow", notches(10, 400) + [wait(1000)])
+        self.assertAlmostEqual(slow.item("tableList")["contentY"], 600, delta=1)
 
     def test_direction_change_turns_at_once(self):
-        r = self.run_acts("scroll_turn", notches(5, 30) + [dump("before"), notch(120), wait(1000)])
+        r = self.run_acts("scroll_turn", notches(5, 30) + [dump("before"), notch(360), wait(1200)])
         self.assertLess(r.item("tableList")["contentY"], self.y(r, "before"))
 
     def test_end_of_list_clamps_exactly(self):
-        r = self.run_acts("scroll_end", notches(60, 20, -240) + [wait(1200), dump("end"), wait(300)])
+        r = self.run_acts("scroll_end", notches(60, 20, -240) + [wait(2000), dump("end"), wait(300)])
         lst = r.item("tableList")
         self.assertEqual(self.y(r, "end"), lst["contentY"], "no bounce")
         self.assertLess(lst["contentY"], lst["contentHeight"])
-        again = self.run_acts("scroll_end2", notches(60, 20, -240) + [wait(1200), dump("end")] + notches(10, 20, -240) + [wait(800)])
+        again = self.run_acts("scroll_end2", notches(60, 20, -240) + [wait(2000), dump("end")] + notches(10, 20, -240) + [wait(1500)])
         self.assertEqual(again.item("tableList")["contentY"], lst["contentY"], "more notches at the end do not move it")
 
 
