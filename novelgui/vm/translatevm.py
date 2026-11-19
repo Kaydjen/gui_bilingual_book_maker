@@ -113,6 +113,7 @@ class TranslateVM(QObject):
         self._ctx_base = None                   # what every row of one build shares; dropped when a fact changes
         self._run_order = (None, [], 0)         # (run, its chapters in order, how many are complete: a pointer)
         self._run_reach = (None, "")
+        self._queued_reach: dict = {}
         self._panel_ok = None
         self._prompt_orig = ("", "")
         self._top: dict = {}
@@ -744,7 +745,7 @@ class TranslateVM(QObject):
         left = self._left_s()
         renew = fquota.renew_at(rc.clock() if rc else time.time())
         pill = tp.time_pill(remaining if (complete or run is not None) else 0, per, float(pace), q.left, q.keys, reach,
-                            run is not None, left, renew, q.capacity)
+                            run is not None, left, renew, q.capacity, wake_at=self._wake() if run is None else None)
         if not self._info or not self._book:
             pill = tp.TimePill()
         late = "finishes tomorrow" in pill.text
@@ -772,7 +773,8 @@ class TranslateVM(QObject):
         rc = self.rc
         row_one = bool(rc and (rc.job_running or rc.sched.wait is not None))
         queue_n = tp.queue_count(len(rc.queue_items()) if rc else 0, row_one)
-        visible = tp.queue_tab_visible(bool(other), bool(rc and rc.quota_wait() is not None), len(rc.queue) if rc else 0,
+        # F7: another series runs or waits, or items are queued; this series' own quota wait alone is not a queue
+        visible = tp.queue_tab_visible(bool(other), False, len(rc.queue) if rc else 0,
                                        bool(rc and rc.job_running))
         samp = self._samples.get(self._path)
         run = rc.run if rc else None
@@ -1161,6 +1163,9 @@ class TranslateVM(QObject):
                 info = self.books.info(w.series)
                 running = tp.QueueFacts(w.series, self._name_of(w.series), "", "", self._lang_of(w.series))
                 wake = w.wake_at
+        for i in rc.queue_items():
+            if i.reach:
+                self._queued_reach[(i.series, i.book)] = i.reach
         items = [self._queue_facts(i) for i in rc.queue_items()]
         rows = tp.queue_rows(running, percent, left, items, self._queue_restart(), wake, now, 60.0 / max(1, pace) / max(1, per))
         return rows
@@ -1172,6 +1177,8 @@ class TranslateVM(QObject):
         text = ""
         if r.series == self._path and r.book == self._book and info:
             text = bookrows.range_text(info, [c for c in r.chapters if c < len(info)])
+        else:                                   # another series: the reach its queue item showed (none for a plain start)
+            text = self._queued_reach.get((r.series, r.book), "")
         self._run_reach = (r, text)
         return text
 

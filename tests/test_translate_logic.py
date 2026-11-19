@@ -49,7 +49,7 @@ class BarTest(unittest.TestCase):
 
     def test_quota_wait_dont_resume_only(self):
         f = tp.BarFacts(start(quota_waiting=True), job_state="waiting_quota")
-        self.assertEqual(texts(f), [("dont_resume", "Don't resume", "main", True)])
+        self.assertEqual(texts(f), [("dont_resume", "Don't resume", "normal", True)])
 
     def test_terms_wait(self):
         f = tp.BarFacts(start(), job_state="waiting_terms", job_terms=12)
@@ -111,6 +111,10 @@ class TimeTest(unittest.TestCase):
     def test_tomorrow(self):
         p = tp.time_pill(100000, 1, 5.0, 100, 8, "1-2", False, None, NOW)
         self.assertIn("finishes tomorrow", p.text)
+
+    def test_quota_wait_says_after_when(self):
+        p = tp.time_pill(600, 5, 5.0, 0, 8, "1-2", False, None, NOW, wake_at=NOW + 3600)
+        self.assertRegex(p.text, r"^≈ .+ after \d\d:\d\d$")
 
     def test_renew_time_comes_from_the_core_rule(self):
         from novelgui.facade import quota

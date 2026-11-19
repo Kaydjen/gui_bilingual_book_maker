@@ -67,11 +67,11 @@ def bar_segments(f: BarFacts) -> list:
     state = f.job_state
     if state == "running":
         job = [Segment("stopping", "Stopping…", "dim", False, "stopping")] if f.stopping else [
-            Segment("stop", "Stop", "main")]
+            Segment("stop", "Stop", "normal")]
     elif state == "waiting_terms":
         job = [Segment("review", "Review %d %s" % (f.job_terms, "term" if f.job_terms == 1 else "terms"), "red"), Segment("more", "•••", "dim")]
     elif state == "waiting_quota":
-        job = [Segment("dont_resume", "Don't resume", "main")]
+        job = [Segment("dont_resume", "Don't resume", "normal")]
     elif state in ("stopped", "interrupted", "failed"):
         verb = "Continue %s" % f.job_reach if f.job_reach else "Continue"
         if f.another_runs:
@@ -211,7 +211,7 @@ class TimePill:
 
 def time_pill(remaining_blocks: int, per_request: int, pace: float, left_today: int | None, keys: int,
               reach: str, running: bool, left_seconds: float | None, renew_at: float | None,
-              total: int | None = None) -> TimePill:
+              total: int | None = None, wake_at: float | None = None) -> TimePill:
     """`Time` pill and popover data. Hidden when nothing is left to translate (and no job runs). `total`: the
     requests a full day allows over all keys (Quota.capacity); None = the default."""
     if remaining_blocks <= 0 and not running:
@@ -231,7 +231,9 @@ def time_pill(remaining_blocks: int, per_request: int, pace: float, left_today: 
     else:
         e = est_selected
         text = "≈ " + duration(e.seconds)
-        if e.days > 1:
+        if wake_at:
+            text += " after " + js.clock_text(wake_at)        # the job waits for the daily quota (mock: quota)
+        elif e.days > 1:
             text += " · finishes tomorrow"
     meter = 0.0 if not left_today or not total else min(1.0, left_today / total)
     return TimePill(True, text, "Chapters %s" % reach if reach else "Chapters", tuple(options), running, keys,
