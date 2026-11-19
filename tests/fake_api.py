@@ -94,7 +94,7 @@ class FakeApi:
 
     def __init__(self, keys, clock=None, rpm=None, day_limit=None, unavailable_at=(), faults=None,
                  fault_fn=None, unknown_models=(), invalid_keys=(), latency=0.0, retry_delay=17,
-                 translate=fake_translate, bucket=None, shut=(), poll_interval=0.5):
+                 translate=fake_translate, bucket=None, shut=(), poll_interval=0.5, model_names=None, region_blocked=()):
         self.keys = list(keys)
         self.clock = clock or FakeClock(auto=False)
         self.rpm = rpm  # per (key, model) requests per 60 s, None = unlimited
@@ -104,6 +104,9 @@ class FakeApi:
         self.fault_fn = fault_fn  # f(entry dict) -> fault kind or None
         self.unknown_models = set(unknown_models)
         self.invalid_keys = set(invalid_keys)
+        self.model_names = list(model_names if model_names is not None else ("gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-flash-image"))
+        self.region_blocked = set(region_blocked)     # key indexes refused as FAILED_PRECONDITION (location)
+        self.gets: list[dict] = []                    # GET /v1beta/models calls: {key (index), path}
         self.latency = latency
         self.retry_delay = retry_delay
         self.translate = translate
@@ -169,6 +172,18 @@ class FakeApi:
             def log_message(self, *a):
                 pass
 
+            def do_GET(self):
+                code, body = api._models(self.path, self.headers.get("x-goog-api-key", ""))
+                data = json.dumps(body).encode("utf-8")
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                try:
+                    self.wfile.write(data)
+                except OSError:
+                    pass
+
             def do_POST(self):
                 length = int(self.headers.get("Content-Length") or 0)
                 raw = self.rfile.read(length)
@@ -191,6 +206,19 @@ class FakeApi:
                     pass
 
         return H
+
+    def _models(self, path, key):
+        """The model list (the call that costs no quota): used to check a key on add and to read Google's list."""
+        kidx = self.keys.index(key) if key in self.keys else -1
+        with self._lock:
+            self.gets.append({"key": kidx, "path": path})
+        if kidx < 0 or kidx in self.invalid_keys:
+            return _err(400, "INVALID_ARGUMENT", "API key not valid. Please pass a valid API key.",
+                        [{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "API_KEY_INVALID"}])
+        if kidx in self.region_blocked:
+            return _err(400, "FAILED_PRECONDITION", "User location is not supported for the API use.")
+        return 200, {"models": [{"name": "models/" + n, "supportedGenerationMethods": ["generateContent"]}
+                                for n in self.model_names]}
 
     def _serve(self, path, key, raw):
         if self.latency:

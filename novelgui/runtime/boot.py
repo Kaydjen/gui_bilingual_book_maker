@@ -102,13 +102,13 @@ def _first(argv, rt, local, name) -> int:
         rt.info("graphics: software renderer (%s)", "setting" if setting == "software" else "an earlier start did not draw")
 
     from PySide6.QtCore import QTimer, Qt
-    from PySide6.QtGui import QGuiApplication
     from PySide6.QtQml import QQmlApplicationEngine
-    from PySide6.QtCore import QUrl
-    from . import fatal, notify, shell as shellmod, single
+    from PySide6.QtWidgets import QApplication
+    from . import assemble, fatal, shell as shellmod, single
 
-    app = QGuiApplication(["novel"])
+    app = QApplication(["novel"])           # QApplication: the tray icon and its menu are widgets
     app.setApplicationName("Novel")
+    app.setQuitOnLastWindowClosed(False)    # a window hidden to the tray must not end the app
     sh = shellmod.Shell(previous_unclean=unclean, graphics_fallback=trial_left)
     rt.exit_handler = sh.exitRequested.emit
     sh.exitRequested.connect(app.exit, Qt.ConnectionType.QueuedConnection)
@@ -128,15 +128,11 @@ def _first(argv, rt, local, name) -> int:
         if os.environ.get(ENV_PLANT) == "startup":
             raise RuntimeError("Planted startup failure")
         engine = QQmlApplicationEngine()
-        engine.rootContext().setContextProperty("shell", sh)
         loaded = []
         engine.objectCreationFailed.connect(lambda url: loaded.append(url.toString()))
-        engine.load(QUrl.fromLocalFile(str(QML_MAIN)))
-        if not engine.rootObjects():
-            raise RuntimeError("The window file could not be loaded: %s" % QML_MAIN.name)
-        window = engine.rootObjects()[0]
+        window, parts = assemble.create_window(app, engine, sh)
         sh.window = window
-        notifier = notify.make_notifier(window)           # noqa: F841  (kept for the screens)
+        sh.toastRequested.connect(parts.app.runtimeToast)
         if not software and setting != "software":
             marks.write(markers.TRIAL)
         _remove_trial_at_first_frame(window, marks)
@@ -163,6 +159,7 @@ def _first(argv, rt, local, name) -> int:
 
     code = app.exec()
     server.close()
+    parts.close()
     del engine
     marks.remove(markers.RUNNING)
     log.logger.info("clean exit (code %d)", code)

@@ -218,3 +218,38 @@ def fill(tip, *values):
     text, facts = tip
     text = sub(text)
     return text, [(name, sub(v)) for name, v in facts]
+
+
+# ---------------------------------------------------------------- the shell of the QML window (step 4)
+TITLE_MIN, TITLE_MAX, TITLE_RESTORE, TITLE_CLOSE = "Minimize", "Maximize", "Restore", "Close"
+GEAR = "Settings: keys, models, pace, library."
+FIRST_START_FOLDER = ("Series, translations and glossaries are kept here. Any folder works; Settings can change it "
+                      "later.", [("Default", "Novel library"), ("Kept in", "this app's settings")])
+LIBRARY_NOT_FOUND_FOLDER = "Choose the folder that holds your series."
+KEYS_HEAD = ("Free Gemini API keys, one per Google project. Changes apply from the next start of a job.",
+             [("Stored in", "the app data folder"), ("Shown as", "dots and the last 4 characters")])
+KEYS_PLUS = ("Add keys", [("Get a free key at", "aistudio.google.com/apikey")])
+KEY_INVALID = "Google does not accept this key. It may be copied incompletely, or switched off in Google AI Studio."
+KEY_NO_ACCESS = "Google's API is not available from your location for this key."
+KEY_NO_CONNECTION = "Cannot reach Google. Check the internet connection and the proxy settings."
+MODELS_HEAD = ("Tried in this order: the first model is used while any key has requests for it; the next one only "
+               "when none has. Changes apply from the next start of a job.")
+MODELS_PLUS = "Add a model"
+MODEL_NOT_FOUND = "Google does not know this model name. A job with it stops until the name is changed."
+MODEL_RECOMMENDED = "Tested with this app; the daily limit per key is known."
+MODEL_FROM_GOOGLE = ("The current list from Google, read once a day with one of your keys. Offline: only "
+                     "Recommended.")
+MODEL_GOOGLE_ITEM = "Listed by Google. Its free limits are not known to the app; some models have none."
+PACE_ROW = ("How often the app sends a request. One request at a time, evenly spaced: 5 = one every 12 s, never "
+            "several at once. The keys take turns. More keys give more requests per day, not more speed: Google "
+            "counts this limit for the whole PC. Above 5, Google may pause every key of this PC for minutes.",
+            [("Range", "1 to 120"), ("Default", "5")])
+AWAKE_ROW = "The PC does not sleep while a job runs or waits in the open window for the daily quota."
+AWAKE_ROW_OFF = "Not available on this system yet"
+LIBRARY_ROW_CHANGE_BUSY = "A job is running. Change the library when it stops."
+APP_DATA_ROW = ("The program's own data: databases, backups, terms snapshots, the trash and the logs. Uninstalling "
+                "the program does not delete this folder; delete it by hand if you want it gone. The library is "
+                "never touched.", [("Click", "opens the folder")])
+GRAPHICS_ROW = ("Auto uses the graphics card. Software draws on the processor: slower, but safe when the window "
+                "stays empty or flickers. Applies from the next start.")
+LOG_BUTTON = "The log of this window: what it did and every problem, without keys."

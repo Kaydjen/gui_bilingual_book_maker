@@ -10,6 +10,7 @@ Floating {
     property var entries: []
     property bool filtering: false
     property string filterText: ""
+    property string placeholder: ""
     property int hot: -1
     signal picked(int index, string id)
     signal filterChanged(string text)
@@ -57,6 +58,13 @@ Floating {
             width: parent.width
             height: 28
             edge: filterField.activeFocus ? Theme.fieldFocus : "#222222"
+            AppText {
+                visible: filterField.text === ""
+                x: 8
+                height: parent.height
+                text: dd.placeholder
+                color: Theme.faint
+            }
             TextInput {
                 id: filterField
                 objectName: "ddFilter"
@@ -71,8 +79,8 @@ Floating {
                 selectByMouse: true
                 onTextEdited: {
                     dd.filterText = text
-                    dd.filterChanged(text)
                     dd.hot = -1
+                    dd.filterChanged(text)
                 }
                 Keys.onDownPressed: dd.step(1)
                 Keys.onUpPressed: dd.step(-1)
@@ -96,6 +104,7 @@ Floating {
                 readonly property bool group: modelData.group !== undefined
                 readonly property bool cur: !group && modelData.current === true
                 readonly property bool off: !group && modelData.off === true
+                readonly property bool dimmed: !group && modelData.dim === true
                 width: ListView.view.width
                 height: 28
 
@@ -143,7 +152,7 @@ Floating {
                     width: item.width - 28 - note.width
                     elide: Text.ElideRight
                     text: item.group ? "" : item.modelData.text
-                    color: item.off ? Theme.faint : (item.cur || hover.hovered || dd.hot === item.index ? Theme.bright : Theme.text)
+                    color: item.off ? Theme.faint : (item.cur || hover.hovered || dd.hot === item.index ? Theme.bright : (item.dimmed ? Theme.dim : Theme.text))
                 }
                 AppText {
                     id: note
