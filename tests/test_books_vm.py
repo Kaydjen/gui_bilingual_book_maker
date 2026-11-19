@@ -404,6 +404,13 @@ class BigBook(Base):
     specs = []
     cold = False
 
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # The app imports these before its window shows: a budget for the first rows must not pay for them, or
+        # whichever big-book test runs first in the process fails.
+        from novelgui.runtime import assemble, notify, tray  # noqa: F401
+
     def build(self):
         if not (DEMO / "rssg18").is_dir():
             self.skipTest("the demo library is not on this PC")
