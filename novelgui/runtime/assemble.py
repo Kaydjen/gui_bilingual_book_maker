@@ -21,6 +21,7 @@ from ..vm.booksvm import BooksVM
 from ..vm.readervm import ReaderVM
 from ..vm.logvm import LogVM
 from ..vm.settingsvm import SettingsVM
+from ..vm.termsvm import TermsVM
 from . import notify, paths, tray as trays
 from .frame import FrameModel
 
@@ -48,13 +49,15 @@ class Parts:
         self.reader_vm = ReaderVM(self.lanes)
         self.add_vm = AddVM(self.app, self.lanes)
         self.books_vm = BooksVM(self.app, self.lanes, self.crunch, self.add_vm)
+        self.terms_vm = TermsVM(self.app, self.lanes, self.books_vm, self.crunch, self.local)
         self.books_vm.readRequested.connect(self.reader_vm.openChapter)
         self.window = None
         self.frame_filter = None
 
     def context(self, shell) -> dict:
         return {"shellVm": shell, "appVm": self.app, "settingsVm": self.settings_vm, "logVm": self.log_vm,
-                "frameVm": self.frame, "booksVm": self.books_vm, "addVm": self.add_vm, "readerVm": self.reader_vm}
+                "frameVm": self.frame, "booksVm": self.books_vm, "addVm": self.add_vm, "readerVm": self.reader_vm,
+                "termsVm": self.terms_vm}
 
     def close(self) -> None:
         self.app.flush()

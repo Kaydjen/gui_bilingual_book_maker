@@ -12,5 +12,6 @@ ShellRoot {
     books: booksVm
     add: addVm
     reader: readerVm
+    terms: termsVm
     forceButtons: fake.forceButtons === true
 }

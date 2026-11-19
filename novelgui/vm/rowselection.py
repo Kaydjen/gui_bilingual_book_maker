@@ -35,6 +35,10 @@ class RowSelection:
     def selectable(self, id_) -> bool:
         return self._selectable is None or bool(self._selectable(id_))
 
+    def positions(self) -> set:
+        """Positions (display order) of the selected ids."""
+        return {self._pos[r] for r in self.ids if r in self._pos}
+
     def selected(self) -> list:
         """Selected ids in display order."""
         return [r for r in self.rows if r in self.ids]
@@ -93,11 +97,16 @@ class RowSelection:
         return True
 
     # ---- keyboard
-    def goto(self, index: int, extend: bool = False) -> None:
+    def goto(self, index: int, extend: bool = False, select: bool = True) -> None:
+        """Move the cursor to row `index`. `select=False` (Terms: the selection is the ticks) moves the cursor and the
+        anchor only."""
         if not self.rows:
             return
         index = max(0, min(len(self.rows) - 1, index))
         r = self.rows[index]
+        if not select:
+            self.cursor = self.anchor = r
+            return
         if extend and self.anchor is not None:
             self.ids = self._range(self.anchor, r)
         else:
@@ -105,16 +114,24 @@ class RowSelection:
             self.anchor = r
         self.cursor = r
 
-    def move(self, delta: int, extend: bool = False) -> None:
+    def move(self, delta: int, extend: bool = False, select: bool = True) -> None:
         """Arrows and Page keys: the cursor moves by `delta` rows (from row 0 when there is no cursor)."""
         cur = self.cursor_index
-        self.goto((0 if cur is None else cur) + delta, extend)
+        self.goto((0 if cur is None else cur) + delta, extend, select)
 
-    def home(self, extend: bool = False) -> None:
-        self.goto(0, extend)
+    def home(self, extend: bool = False, select: bool = True) -> None:
+        self.goto(0, extend, select)
 
-    def end(self, extend: bool = False) -> None:
-        self.goto(len(self.rows) - 1, extend)
+    def end(self, extend: bool = False, select: bool = True) -> None:
+        self.goto(len(self.rows) - 1, extend, select)
+
+    def point(self, index: int) -> bool:
+        """A click on a row's body in a table whose selection is the ticks: the cursor goes there, the ticks stay."""
+        if not 0 <= index < len(self.rows):
+            return False
+        before = self.cursor
+        self.cursor = self.anchor = self.rows[index]
+        return before != self.cursor
 
     def select_all(self) -> None:
         self.ids = {r for r in self.rows if self.selectable(r)}

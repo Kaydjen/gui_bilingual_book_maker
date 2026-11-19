@@ -1,0 +1,10 @@
+module Terms
+CellEdit 1.0 CellEdit.qml
+ChipCell 1.0 ChipCell.qml
+ImportPanel 1.0 ImportPanel.qml
+ReaderPane 1.0 ReaderPane.qml
+SearchBox 1.0 SearchBox.qml
+TermHead 1.0 TermHead.qml
+TermRow 1.0 TermRow.qml
+TermTabs 1.0 TermTabs.qml
+TermsScreen 1.0 TermsScreen.qml

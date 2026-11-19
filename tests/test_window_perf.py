@@ -124,5 +124,25 @@ class BooksChapterListScroll(unittest.TestCase):
         self.assertGreaterEqual(r["busy"], 0.8 * r["idle"], r)
 
 
+@unittest.skipUnless(HAVE_QT, "PySide6 is not installed")
+class TermsTableScroll(unittest.TestCase):
+    """The REAL Terms table (20,000 terms) keeps >= 80 % of its idle frames while a lane works. The model reset alone is <= 30 ms
+    (test_terms_actions PerfTests); here the reset is measured with the table attached (the view rebuilds its delegates), loosened."""
+
+    def test_the_terms_table_scrolls_while_a_lane_is_busy(self):
+        env = dict(os.environ, PYTHONUTF8="1")
+        out = subprocess.run([sys.executable, str(HERE / "perf_terms.py")], capture_output=True, text=True, env=env,
+                             timeout=400, cwd=str(HERE.parent))
+        self.assertEqual(out.returncode, 0, out.stdout[-1500:] + out.stderr[-2000:])
+        r = json.loads(out.stdout.strip().splitlines()[-1])
+        report("terms scroll", r)
+        self.assertGreaterEqual(r["rows"], 19990)
+        self.assertLessEqual(r["reset_ms"], 150, "a 20,000-row reset with the view attached")
+        self.assertGreater(r["idle"], 25)
+        self.assertGreater(r["work"], 100)
+        # a term row has eight text cells (a chapter row three): its frames are fewer and a lane costs a little more of them
+        self.assertGreaterEqual(r["busy"], 0.75 * r["idle"], r)
+
+
 if __name__ == "__main__":
     unittest.main()

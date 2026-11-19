@@ -35,6 +35,7 @@ Item {
                     required property var modelData
                     readonly property string kind: modelData.kind || ""
                     readonly property bool off: kind === "off"
+                    readonly property bool fixed: kind === "off" || kind === "capt"
                     width: label.implicitWidth + 32
                     height: strip.height
 
@@ -47,7 +48,7 @@ Item {
                     Rectangle {
                         anchors.fill: parent
                         anchors.leftMargin: seg.index > 0 ? 1 : 0
-                        visible: !seg.off && segHover.hovered
+                        visible: !seg.fixed && segHover.hovered
                         color: Theme.lift2
                         topLeftRadius: seg.index === 0 ? Theme.rCapsule : 0
                         bottomLeftRadius: seg.index === 0 ? Theme.rCapsule : 0
@@ -60,10 +61,10 @@ Item {
                         anchors.centerIn: parent
                         text: seg.modelData.text
                         font.weight: seg.kind === "main" ? Font.DemiBold : Font.Normal
-                        color: seg.off ? Theme.faint : seg.kind === "accent" ? Theme.accent : (seg.kind === "main" || segHover.hovered ? Theme.bright : Theme.dim)
+                        color: seg.off ? Theme.faint : seg.kind === "accent" ? Theme.accent : (seg.kind === "main" || (segHover.hovered && !seg.fixed) ? Theme.bright : Theme.dim)
                     }
-                    HoverHandler { id: segHover; cursorShape: seg.off ? Qt.ArrowCursor : Qt.PointingHandCursor }
-                    TapHandler { enabled: !seg.off; onTapped: bar.activated(seg.index, seg.modelData.id || "") }
+                    HoverHandler { id: segHover; cursorShape: seg.fixed ? Qt.ArrowCursor : Qt.PointingHandCursor }
+                    TapHandler { enabled: !seg.fixed; onTapped: bar.activated(seg.index, seg.modelData.id || "") }
                     TipArea { tip: seg.modelData.tip || "" }
                 }
             }

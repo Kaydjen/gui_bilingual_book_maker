@@ -304,11 +304,15 @@ class TermRow:
     forms: tuple
     note: str
     same_as: str
+    choices: tuple = ()         # ((field, ((value, where it comes from), ...)), ...): the open questions with their candidates
 
 
 def row_of(e) -> TermRow:
+    choices = tuple((f, tuple((str(c.get("value", "")), str(c.get("evidence", ""))) for c in cands))
+                    for f, cands in sorted(e.questions.items()))
     return TermRow(entry_key(e), e.source, e.tr, e.type, e.gender, e.status, e.count,
-                   min(e.seen) if e.seen else None, tuple(sorted(e.questions)), tuple(e.forms), e.note, e.same_as)
+                   min(e.seen) if e.seen else None, tuple(sorted(e.questions)), tuple(e.forms), e.note, e.same_as,
+                   choices)
 
 
 @dataclass(frozen=True)
@@ -318,6 +322,7 @@ class TermCommand:
     keys: tuple
     field: str = ""
     value: str = ""
+    label: str = ""             # the operation name of a BULK change: a snapshot of the base is taken first (14.11)
 
 
 @dataclass(frozen=True)
@@ -337,6 +342,8 @@ class TermStore:
         self.base = TermBase.load(self.path, tag)
         self.dirty = False
         self.saves = 0
+        self.history = None                 # fn(label): snapshot the base before a bulk change (window side, C17)
+        self._trash: list = []              # [(entries, dismissed sources)] of the last Delete / Not a term
 
     def _entry(self, key: str):
         table = getattr(self.base, "_entries", None)
@@ -357,12 +364,16 @@ class TermStore:
         return row_of(e) if e is not None else None
 
     def apply(self, cmd: TermCommand) -> CommandResult:
+        if cmd.op in ("add", "undo_delete", "dismiss_names"):
+            return self._apply_new(cmd)
         entries = [self._entry(k) for k in cmd.keys]
         missing = tuple(k for k, e in zip(cmd.keys, entries) if e is None)
         entries = [e for e in entries if e is not None]
         if not entries:
             return CommandResult((), missing, "The term is gone.")
         base = self.base
+        if cmd.op in ("confirm", "unconfirm", "merge"):
+            self._snapshot_before(cmd)
         if cmd.op == "set_field":
             value = str(cmd.value).strip()
             if cmd.field not in ("tr", "type", "gender", "note", "same_as"):
@@ -391,13 +402,78 @@ class TermStore:
                 if cmd.field in e.questions:
                     base.answer(e, cmd.field, {"gender": e.gender, "tr": e.tr, "same_as": e.same_as}[cmd.field])
             self.dirty = True
-        elif cmd.op == "delete":
-            gone = tuple(entry_key(e) for e in entries if base.delete(e.source))
-            self.dirty = self.dirty or bool(gone)
-            return CommandResult((), missing + gone)
+        elif cmd.op in ("delete", "dismiss"):
+            return self._remove(cmd, entries, missing)
+        elif cmd.op == "merge":
+            return self._merge(entries, missing)
         else:
             return CommandResult((), missing, "Unknown command.")
         return CommandResult(tuple(row_of(e) for e in entries), missing)
+
+    def _snapshot_before(self, cmd: TermCommand) -> None:
+        if cmd.label and self.history is not None:
+            self.history(cmd.label)
+
+    def _remove(self, cmd: TermCommand, entries, missing) -> CommandResult:
+        """Delete (Undo available) or Not a term (the same, plus: never suggested again)."""
+        self._snapshot_before(cmd)
+        kept, dismissed, gone = [], [], []
+        for e in entries:
+            kept.append(e)
+            if self.base.delete(e.source):
+                gone.append(entry_key(e))
+                if cmd.op == "dismiss" and self.base.dismiss(e.source):
+                    dismissed.append(e.source)
+        self._trash = [(kept, dismissed)]
+        self.dirty = self.dirty or bool(gone)
+        return CommandResult((), missing + tuple(gone))
+
+    def _merge(self, entries, missing) -> CommandResult:
+        """The first entry keeps; the others become its other spellings."""
+        if len(entries) < 2:
+            return CommandResult(tuple(row_of(e) for e in entries), missing, "Pick two or more terms to merge.")
+        keep, gone = entries[0], []
+        for o in entries[1:]:
+            self.base.merge(keep.source, o.source)
+            gone.append(entry_key(o))
+        self.dirty = True
+        return CommandResult((row_of(keep),), missing + tuple(gone))
+
+    def _apply_new(self, cmd: TermCommand) -> CommandResult:
+        """`add`: a mined name the user gave a rendering (a confirmed entry); `undo_delete`: the last removal back."""
+        if cmd.op == "add":
+            text, tr = cmd.field.strip(), cmd.value.strip()
+            if not text or not tr:
+                return CommandResult((), (), "A rendering is needed.")
+            try:
+                e = self.base.add(text, status="confirmed", tr=tr)
+            except ValueError as exc:
+                return CommandResult((), (), str(exc))
+            self.dirty = True
+            return CommandResult((row_of(e),))
+        if cmd.op == "dismiss_names":
+            self._snapshot_before(cmd)
+            for name in cmd.value.split("\n"):
+                try:
+                    self.dirty = self.base.dismiss(name) or self.dirty
+                except ValueError:
+                    continue
+            return CommandResult(())
+        back = []
+        for entries, dismissed in self._trash:
+            for src in dismissed:
+                self.base.restore(src)
+            for e in entries:
+                try:
+                    back.append(row_of(self.base.add(
+                        e.source, status=e.status, forms=e.forms, type=e.type, gender=e.gender, tr=e.tr, note=e.note,
+                        hint=e.hint, same_as=e.same_as, seen=e.seen, count=e.count, evidence=e.evidence,
+                        changed=e.changed, questions=e.questions, locked=e.locked, extra=e.extra)))
+                except ValueError:
+                    continue
+        self._trash = []
+        self.dirty = self.dirty or bool(back)
+        return CommandResult(tuple(back))
 
     def save(self) -> bool:
         """Write terms.json (the core's atomic save) when something changed. True when it wrote."""
@@ -429,6 +505,147 @@ class TermStore:
         if n:
             self.dirty = True
         return n
+
+    # -- questions of the screen, answered from the base (data lane)
+    def blocking_keys(self, chapters) -> frozenset:
+        """Keys of the unconfirmed entries that occur in one of the chapters (what stops translating them)."""
+        want = set(chapters)
+        if not want:
+            return frozenset()
+        return frozenset(entry_key(e) for e in self.base if e.status == "new" and not want.isdisjoint(e.seen))
+
+    def chapters_of(self, key: str) -> tuple:
+        e = self._entry(key)
+        return tuple(sorted(e.seen)) if e is not None else ()
+
+    def names_of(self, key: str) -> tuple:
+        e = self._entry(key)
+        return tuple(e.spellings()) if e is not None else ()
+
+    def dismissed(self) -> frozenset:
+        return frozenset(self.base.dismissed())
+
+    def import_glossaries(self, files, confirmed: dict, label: str = "Import", progress=None) -> dict:
+        """Add the terms of glossary files (only adds, 6.4), one file at a time. `confirmed` {file name: bool}: a file
+        that goes to `Not confirmed` leaves its NEW terms unconfirmed. Returns {keys, added, confirmed, unconfirmed,
+        choices, same}; `keys` = the entries this import touched."""
+        if self.history is not None:
+            self.history(label)
+        base, origin = self.base, {}
+        before = {entry_key(e): (e.tr, repr(e.questions.get("tr"))) for e in base}
+        stats = {"added": 0, "same": 0, "choices": 0, "confirmed": 0, "unconfirmed": 0}
+        orig = set(before)
+        for n, f in enumerate(files, 1):
+            if progress is not None:
+                progress(n, len(files), Path(f).name)
+            rep = import_glossary(base, [Path(f)])
+            stats["added"] += rep.added
+            stats["same"] += rep.same
+            stats["choices"] += len(rep.conflicts)
+            self._note_origin(origin, before, orig, Path(f).name)
+        by_name = {Path(f).name: bool(confirmed.get(Path(f).name, True)) for f in files}
+        fresh = {k for k in origin if k not in orig}
+        for k, name in origin.items():
+            e = self._entry(k)
+            if e is None or e.questions or k not in fresh:
+                continue
+            if by_name.get(name, True):
+                stats["confirmed"] += 1
+            else:
+                e.status = "new"
+                base._touch(e)
+                stats["unconfirmed"] += 1
+        self.dirty = True
+        stats["keys"] = tuple(sorted(origin))
+        return stats
+
+    def _note_origin(self, origin: dict, before: dict, orig: set, name: str) -> None:
+        """After one file: which entries it added or changed (a new entry, another rendering, a question that grew), and the
+        file named in a question that says the base (`terms.json`) instead of the file the rendering came from."""
+        for e in self.base:
+            k = entry_key(e)
+            sig = (e.tr, repr(e.questions.get("tr")))
+            if before.get(k) != sig:
+                origin.setdefault(k, name)
+        for e in self.base:
+            k = entry_key(e)
+            for c in e.questions.get("tr", ()):
+                if c.get("evidence") == self.base.path.name and k in origin and k not in orig:
+                    c["evidence"] = origin[k]
+        for e in self.base:
+            before.setdefault(entry_key(e), (e.tr, repr(e.questions.get("tr"))))
+
+    def export_to(self, path) -> int:
+        """The glossary as plain {source: rendering} JSON (9.12): the entries that have a rendering."""
+        import json
+        data = {e.source: e.tr for e in self.base.sorted_entries() if e.tr}
+        Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        return len(data)
+
+
+def read_glossary_task(ctx, files) -> list:
+    """[(file name, terms, {key: rendering})] of glossary JSON files for the Import panel; a bad file raises."""
+    import json
+    out = []
+    for f in files:
+        data = json.loads(Path(f).read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("%s: not a JSON object" % Path(f).name)
+        ok = {norm_key(k): v.strip() for k, v in data.items() if isinstance(k, str) and isinstance(v, str)
+              and k.strip() and v.strip()}
+        out.append((Path(f).name, len(ok), ok))
+    return out
+
+
+def term_names_task(ctx, series_path, book_name: str) -> list:
+    """Names the offline scan found that are not in the base: [(text, count, first chapter)]. They only suggest
+    until the model pass exists (core C3); no rendering yet."""
+    series = Series.open(series_path)
+    fr = core_frontier.Frontier.for_series(series, book_name)
+    fr.scan(progress=lambda d, t: ctx.emit(("scan", d, t)), cancel=lambda: ctx.cancelled, mine=True)
+    ctx.breathe()
+    return sorted(((it.text, int(it.count), int(it.first)) for it in fr.terms().values()
+                   if it.kind == core_frontier.KIND_CANDIDATE), key=lambda t: (t[2], -t[1], t[0].lower()))
+
+
+def term_places_task(ctx, series_path, book_name: str, names, chapters=None, context: int = 1) -> int:
+    """Paragraphs of the book that mention a term (any of `names`), found in small batches that are emitted as they
+    come: [(chapter, block, mentions, [paragraph before], paragraph, [paragraph after])]. Only `chapters` are read
+    when given (the places the scan noted), else the whole book. Returns how many paragraphs were found."""
+    from novelcore.htmlscan import strip_markers
+    from ..termlogic import term_regex
+    names = [n for n in names if n]
+    if not names:
+        return 0
+    pattern = term_regex(SimpleNamespace(source=names[0], forms=names[1:]))
+    book = open_book(book_file(series_path, book_name))
+    chs = book.chapters
+    order = sorted(i for i in chapters if 0 <= i < len(chs)) if chapters else range(len(chs))
+    found, batch, last = 0, [], time.perf_counter()
+    for i in order:
+        if ctx.cancelled:
+            return found
+        try:
+            if not chapters and chs[i].is_toc:
+                continue
+            texts = [(b.index, strip_markers(b.text)) for b in book.blocks(chs[i])]
+        except Exception:
+            continue
+        for k, (bi, text) in enumerate(texts):
+            n = len(pattern.findall(text))
+            if n:
+                batch.append((i, bi, n, [t for _b, t in texts[max(0, k - context):k]], text,
+                              [t for _b, t in texts[k + 1:k + 1 + context]]))
+        ctx.breathe()
+        now = time.perf_counter()
+        if batch and (len(batch) >= 8 or now - last > 0.1):
+            found += len(batch)
+            ctx.emit(batch)
+            batch, last = [], now
+    if batch:
+        found += len(batch)
+        ctx.emit(batch)
+    return found
 
 
 def term_scan_task(ctx, snapshot_path, tag: str, series_path, book_name: str, chapters=None) -> dict:

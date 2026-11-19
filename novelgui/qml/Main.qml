@@ -44,6 +44,7 @@ Window {
         books: booksVm
         add: addVm
         reader: readerVm
+        terms: termsVm
     }
 
     Loader {
@@ -89,6 +90,60 @@ Window {
                 filesLoader.item.open()    // qmllint disable missing-property
             else
                 filesLoader.active = true
+        }
+    }
+
+    Loader {
+        id: importLoader
+        active: false
+        sourceComponent: FileDialog {
+            currentFolder: root.startUrl
+            fileMode: FileDialog.OpenFiles
+            nameFilters: ["Glossaries (*.json)"]
+            onAccepted: termsVm.importPicked(selectedFiles)
+        }
+        // qmllint disable missing-property
+        onLoaded: item.open()
+        // qmllint enable missing-property
+    }
+    Connections {
+        target: termsVm
+        function onImportDialogRequested(start) {
+            root.startUrl = "file:///" + start.split("\\").join("/")
+            if (importLoader.active)
+                importLoader.item.open()    // qmllint disable missing-property
+            else
+                importLoader.active = true
+        }
+    }
+
+    Loader {
+        id: exportLoader
+        active: false
+        sourceComponent: FileDialog {
+            currentFolder: root.startUrl
+            fileMode: FileDialog.SaveFile
+            nameFilters: ["Glossary (*.json)"]
+            defaultSuffix: "json"
+            onAccepted: termsVm.exportPicked(selectedFile.toString())
+        }
+        // qmllint disable missing-property
+        onLoaded: item.open()
+        // qmllint enable missing-property
+    }
+    Connections {
+        target: termsVm
+        function onExportDialogRequested(name) {
+            if (exportLoader.active)
+                exportLoader.item.open()    // qmllint disable missing-property
+            else
+                exportLoader.active = true
+        }
+    }
+    Connections {
+        target: termsVm
+        function onOpenFolderRequested(path) {
+            Qt.openUrlExternally("file:///" + path.split("\\").slice(0, -1).join("/"))
         }
     }
 

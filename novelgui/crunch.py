@@ -54,6 +54,8 @@ TASKS = {
     "scan_book": _scan_book,
     "term_scan": terms.term_scan_task,
     "term_keys": terms.term_keys_in_chapters_task,
+    "term_names": terms.term_names_task,
+    "term_places": terms.term_places_task,
     "occurrences": books.find_occurrences_task,
     "export": books.export_piece_task,
     "problems": checks.problems_task,

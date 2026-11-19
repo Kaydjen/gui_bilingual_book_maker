@@ -465,6 +465,13 @@ class BooksVM(QObject):
     def nextKind(self):
         return self._next()[0]
 
+    def terms_context(self) -> tuple:
+        """What the Terms screen needs of Books: (series path, book stem, selected chapter positions, their range text, the
+        chapter numbers by position). The selection is read here, never copied around."""
+        ids = tuple(sorted(self._sel.ids))
+        rng = bookrows.range_text(self.session.infos, ids) if ids else ""
+        return self._path, self._book, ids, rng, bookrows.shown_numbers(self.session.infos)
+
     def set_blocking(self, n: int) -> None:
         """Terms that block the selected chapters (step 6 will feed this from the term base)."""
         self.blocking_terms = int(n)

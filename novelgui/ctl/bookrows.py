@@ -135,6 +135,11 @@ def _shown_number(info) -> int:
     return n if n is not None else cl.display_no(info.index)
 
 
+def shown_numbers(infos) -> list:
+    """The chapter number the user reads for each list position (Terms shows First and the selection by them)."""
+    return [_shown_number(i) for i in infos]
+
+
 def range_text(infos, indices) -> str:
     """`2697-2750`, or `5, 9-12`: runs of consecutive list positions by the numbers the user reads."""
     out = []

@@ -74,3 +74,49 @@ def reader_counter_tip(k: int, n: int, mentions: int, running: bool):
 
 def step_tip(text: str, keys: str, k: int, n: int):
     return text, [("Shortcut", keys), ("Place", "%d of %d" % (k, n))]
+
+
+# ---------------------------------------------------------------- the Terms screen of the QML window (6.7, 9.12, 14.13)
+TAB_BLOCKING = ("Terms that stop translating the chapters selected in Books until you confirm them. The same number "
+                "as Review N terms on Translate.")
+TAB_BLOCKING_NONE = "No chapters selected in Books."
+TAB_NOTCONF = ("Every term of the series that is not confirmed yet: the blocking ones, the rest of the book, names found "
+               "in the book without a rendering, and confirmed terms an import brought a second rendering for (a choice).")
+TAB_CONFIRMED = "Confirmed terms with no open question: the translation uses exactly these. Edit in place."
+SEARCH = "Search (Ctrl+F, or just start typing)"
+SEARCH_CLEAR = "Clear and close (Esc)"
+MORE = "Import, Export"
+MORE_BUSY = "Importing…"
+HEAD_TO_EMPTY = "Choose the language to translate into. Renderings depend on it."
+HEAD_TO = "Rendering in %s. Double-click or Enter to edit."
+HEAD_TYPE = "Show one type only."
+HEAD_TYPE_SET = "Only %s. Click: another type or all."
+NO_LANGUAGE = "Choose the language first."
+NO_RENDERING = "No rendering yet. Type it and press Enter: the term becomes confirmed."
+CELL_EDIT = "Enter takes it, Tab: next cell, Esc: back to %s."
+MERGE = "Make the ticked terms one entry: the others become its other spellings (also)."
+NOT_A_TERM = "Never suggest these again."
+NEUTER = "neuter: a creature or a thing"
+PREV_PLACE = "Previous place (Alt+Left)"
+NEXT_PLACE = "Next place (Alt+Right)"
+SCANNING = ("Looking for the series' terms in every chapter: fills Count and First, adds names without a rendering, finds "
+            "what blocks the selected chapters.")
+IMPORT_GOES = ("Confirmed: the translation uses these terms as they are (your own, checked glossary).<br>Not confirmed: they "
+               "wait in Terms for your check.<br>Leave terms out or confirm part of them after the import: Show imported.")
+IMPORT_WHERE = "Where the terms of each file land in Terms. Click a value to change it."
+SHOW_IMPORTED = "Show only the terms of this import: leave some out (Delete), confirm part of them, pick the choices."
+IMPORTED_CHIP = "Only the %d terms of the last import. ✕ or Esc: all terms."
+ENGLISH_LATER = "Comes with a later program change"
+SHOW_FOLDER = "Opens the folder with the saved file."
+GO_TRANSLATE = "Opens Translate with chapters %s. Does not start."
+
+
+def confirm_tip(n: int) -> str:
+    return ("Accept the %d terms with one value in this list as they are:<br>· translation uses exactly them and they stop "
+            "holding it up;<br>· the model will not change them later;<br>· they move to Confirmed, where you can still "
+            "edit them.<br>Left: rows with two values (click the right one) and names without a rendering (type it)." % n)
+
+
+def chip_tip(value: str, source: str) -> str:
+    where = "In use now." if source in ("", "in use") else "From %s." % source
+    return "%s Click: use %s and tick the row (Confirm takes it).<br>Double-click the cell to type another." % (where, value)

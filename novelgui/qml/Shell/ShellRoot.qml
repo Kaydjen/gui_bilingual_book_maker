@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Novel
 import Books
+import Terms
 
 // The content of the main window: header, ONE screen at a time (placeholders for steps 5-8), the first-start block, the
 // panels (settings, closing, library not found), the message panel and the second-start notice. Everything it shows
@@ -17,6 +18,7 @@ AppRoot {
     property var books: null
     property var add: null
     property var reader: null
+    property var terms: null
     property bool forceButtons: false
     readonly property bool ready: app !== null && app.libraryState === "ready"
 
@@ -67,6 +69,13 @@ AppRoot {
             objectName: "screen_terms"
             anchors.fill: parent
             visible: root.app.screen === "terms"
+            TermsScreen {
+                objectName: "termsScreen"
+                anchors.fill: parent
+                visible: root.ready
+                terms: root.terms
+                app: root.app
+            }
         }
         Item {
             objectName: "screen_translate"
@@ -118,6 +127,10 @@ AppRoot {
     AddPanel {
         objectName: "addPanel"
         add: root.add
+    }
+    ImportPanel {
+        objectName: "importPanel"
+        terms: root.terms
     }
     MovePanel {
         objectName: "movePanel"
