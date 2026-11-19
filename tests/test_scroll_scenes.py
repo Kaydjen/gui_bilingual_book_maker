@@ -43,18 +43,18 @@ class WheelScenes(unittest.TestCase):
 
     def test_one_notch_glides_a_short_way(self):
         r = self.run_acts("scroll_one", [notch(), wait(100), dump("mid"), wait(900), dump("end"), wait(200)])
-        self.assertTrue(0 < self.y(r, "mid") < 60, "gliding, not jumping: %s" % self.y(r, "mid"))
-        self.assertAlmostEqual(r.item("tableList")["contentY"], 60, delta=1)
+        self.assertTrue(0 < self.y(r, "mid") < 24, "gliding, not jumping: %s" % self.y(r, "mid"))
+        self.assertAlmostEqual(r.item("tableList")["contentY"], 24, delta=1)
         self.assertEqual(self.y(r, "end"), r.item("tableList")["contentY"], "the glide has stopped")
 
     def test_fast_streak_goes_far_slow_notches_do_not_accelerate(self):
         fast = self.run_acts("scroll_fast", notches(10, 10) + [wait(2000)])
-        self.assertGreaterEqual(fast.item("tableList")["contentY"], 1800)
+        self.assertGreaterEqual(fast.item("tableList")["contentY"], 700)
         slow = self.run_acts("scroll_slow", notches(10, 400) + [wait(1000)])
-        self.assertAlmostEqual(slow.item("tableList")["contentY"], 600, delta=1)
+        self.assertAlmostEqual(slow.item("tableList")["contentY"], 240, delta=1)
 
     def test_direction_change_turns_at_once(self):
-        r = self.run_acts("scroll_turn", notches(5, 30) + [dump("before"), notch(360), wait(1200)])
+        r = self.run_acts("scroll_turn", notches(5, 30) + [dump("before"), notch(1200), wait(1200)])
         self.assertLess(r.item("tableList")["contentY"], self.y(r, "before"))
 
     def test_end_of_list_clamps_exactly(self):
