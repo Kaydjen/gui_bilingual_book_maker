@@ -11,6 +11,16 @@ MouseArea {
 
     property Flickable flickable: null
     property real step: 120                  // px per wheel notch (about 4 rows)
+    property real streakMs: 180              // a notch this soon after the last one (same way) continues the streak
+    property real gainStep: 0.4              // extra distance per notch of a streak
+    property real gainMax: 5
+    property real tau: 0.075                 // seconds: how fast the glide closes the gap to the target
+    property bool gliding: false
+    property real target: 0
+    property real written: 0
+    property int streak: 0
+    property int lastDir: 0
+    property real lastAt: 0
     property bool auto: false                // middle-button scrolling on
     property bool sticky: false              // ... after a short middle click, until the next click
     property real anchorX: 0
@@ -31,12 +41,37 @@ MouseArea {
     function clamp(y) {
         return Math.max(minY, Math.min(maxY, y))
     }
+    function gainFor(dir) {
+        var now = Date.now()
+        var same = dir === lastDir && now - lastAt <= streakMs
+        streak = same ? streak + 1 : 1
+        lastDir = dir
+        lastAt = now
+        return Math.min(1 + gainStep * (streak - 1), gainMax)
+    }
     function glide(dy) {
-        var from = glideAnim.running ? glideAnim.to : flickable.contentY
-        glideAnim.stop()
-        glideAnim.from = flickable.contentY
-        glideAnim.to = clamp(from + dy)
-        glideAnim.start()
+        var dir = dy < 0 ? -1 : 1
+        if (dir !== lastDir || !gliding)
+            target = flickable.contentY
+        target = clamp(target + dy * gainFor(dir))
+        if (Visual.live) {
+            written = flickable.contentY
+            gliding = true
+        } else {
+            stopGlide()
+            flickable.contentY = target
+        }
+    }
+    function stopGlide() {
+        gliding = false
+        target = flickable.contentY
+    }
+    function advance(dt) {
+        var gap = target - flickable.contentY
+        written = Math.abs(gap) < 0.5 ? target : flickable.contentY + gap * (1 - Math.exp(-dt / tau))
+        flickable.contentY = written
+        if (written === target)
+            gliding = false
     }
     function speed() {
         var d = pointerY - anchorY
@@ -50,8 +85,9 @@ MouseArea {
 
     onWheel: wheel => {
         if (wheel.pixelDelta.y !== 0) {
-            glideAnim.stop()
+            stopGlide()
             flickable.contentY = clamp(flickable.contentY - wheel.pixelDelta.y)
+            target = flickable.contentY
         } else if (wheel.angleDelta.y !== 0) {
             glide(-wheel.angleDelta.y / 120 * step)
         } else {
@@ -67,7 +103,7 @@ MouseArea {
         anchorY = mouse.y
         pointerY = mouse.y
         pressedAt = Date.now()
-        glideAnim.stop()
+        stopGlide()
         auto = true
     }
     onPositionChanged: mouse => pointerY = mouse.y
@@ -82,12 +118,17 @@ MouseArea {
     onCanceled: stopAuto()
     onVisibleChanged: if (!visible) stopAuto()
 
-    NumberAnimation {
-        id: glideAnim
+    FrameAnimation {
+        running: assist.gliding && Visual.live
+        onTriggered: assist.advance(frameTime)
+    }
+    // something else moved the list (keys, positionViewAtIndex): leave it alone
+    Connections {
         target: assist.flickable
-        property: "contentY"
-        duration: 160
-        easing.type: Easing.OutCubic
+        function onContentYChanged() {
+            if (assist.gliding && Math.abs(assist.flickable.contentY - assist.written) > 1)
+                assist.stopGlide()
+        }
     }
     FrameAnimation {
         running: assist.auto && Visual.live
