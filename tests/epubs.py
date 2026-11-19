@@ -46,7 +46,7 @@ RICH = (
 )
 
 
-def write_epub(path, pages):
+def write_epub(path, pages, extra=None, titles=None):
     """pages: list of body HTML strings, one chapter each. The mimetype member comes first and is stored."""
     items = "".join(
         '<item id="c%d" href="ch%d.xhtml" media-type="application/xhtml+xml"/>' % (i, i) for i in range(len(pages))
@@ -56,10 +56,34 @@ def write_epub(path, pages):
         zf.writestr(zipfile.ZipInfo("mimetype"), "application/epub+zip", compress_type=zipfile.ZIP_STORED)
         zf.writestr("META-INF/container.xml", CONTAINER, compress_type=zipfile.ZIP_DEFLATED)
         zf.writestr("OEBPS/content.opf", OPF % (items, spine), compress_type=zipfile.ZIP_DEFLATED)
-        zf.writestr("OEBPS/nav.xhtml", NAV, compress_type=zipfile.ZIP_DEFLATED)
+        nav = NAV
+        if titles:
+            lis = "".join('<li><a href="ch%d.xhtml">%s</a></li>' % (i, t) for i, t in enumerate(titles))
+            nav = NAV.replace('<li><a href="ch0.xhtml">One</a></li>', lis)
+        zf.writestr("OEBPS/nav.xhtml", nav, compress_type=zipfile.ZIP_DEFLATED)
         for i, body in enumerate(pages):
             zf.writestr("OEBPS/ch%d.xhtml" % i, PAGE % body, compress_type=zipfile.ZIP_DEFLATED)
+        for name, data in (extra or {}).items():
+            zf.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
     return path
+
+
+def encryption_xml(entries):
+    """META-INF/encryption.xml for `entries`: [(algorithm, uri)]."""
+    body = "".join('<enc:EncryptedData><enc:EncryptionMethod Algorithm="%s"/><enc:CipherData>'
+                   '<enc:CipherReference URI="%s"/></enc:CipherData></enc:EncryptedData>' % e for e in entries)
+    return ('<?xml version="1.0"?><encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container" '
+            'xmlns:enc="http://www.w3.org/2001/04/xmlenc#">%s</encryption>' % body)
+
+
+IDPF_FONT = "http://www.idpf.org/2008/embedding"
+ADOBE_FONT = "http://ns.adobe.com/pdf/enc#RC"
+AES = "http://www.w3.org/2001/04/xmlenc#aes128-cbc"
+
+
+def write_with_encryption(path, entries, pages=None):
+    return write_epub(path, pages or ["<h1>Chapter 1 - One</h1><p>Some text of the book.</p>"],
+                      {"META-INF/encryption.xml": encryption_xml(entries)})
 
 
 def write_rich(path):

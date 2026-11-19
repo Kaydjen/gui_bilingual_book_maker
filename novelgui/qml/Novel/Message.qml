@@ -49,6 +49,7 @@ Item {
             }
             AppText {
                 id: text
+                objectName: "messageText"
                 anchors.centerIn: parent
                 textFormat: Text.StyledText
                 text: msg.html()

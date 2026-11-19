@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import Novel
+import Books
 
 // The content of the main window: header, ONE screen at a time (placeholders for steps 5-8), the first-start block, the
 // panels (settings, closing, library not found), the message panel and the second-start notice. Everything it shows
@@ -13,6 +14,9 @@ AppRoot {
     property var log: null
     property var frame: null
     property var shell: null
+    property var books: null
+    property var add: null
+    property var reader: null
     property bool forceButtons: false
     readonly property bool ready: app !== null && app.libraryState === "ready"
 
@@ -37,13 +41,21 @@ AppRoot {
         width: parent.width - 32
         height: parent.height - header.height - 16
         radius: Theme.rPane
-        color: Theme.pane
+        // Books draws its own two panes on the black window (mock .pane); the other screens sit in this one
+        color: root.app.screen === "books" && root.ready ? "transparent" : Theme.pane
         clip: true
 
         Item {
             objectName: "screen_books"
             anchors.fill: parent
             visible: root.app.screen === "books"
+            BooksScreen {
+                objectName: "booksScreen"
+                anchors.fill: parent
+                visible: root.ready
+                books: root.books
+                app: root.app
+            }
             FirstStart {
                 objectName: "firstStart"
                 anchors.fill: parent
@@ -60,6 +72,12 @@ AppRoot {
             objectName: "screen_translate"
             anchors.fill: parent
             visible: root.app.screen === "translate"
+            ReaderTab {
+                objectName: "readerScreen"
+                anchors.fill: parent
+                visible: root.reader.isOpen
+                reader: root.reader
+            }
         }
         Item {
             objectName: "screen_export"
@@ -92,6 +110,19 @@ AppRoot {
         }
     }
 
+    DropFrame {
+        objectName: "dropFrame"
+        books: root.books
+        enabled: root.ready && root.app.panel === "" && !root.app.settingsOpen
+    }
+    AddPanel {
+        objectName: "addPanel"
+        add: root.add
+    }
+    MovePanel {
+        objectName: "movePanel"
+        books: root.books
+    }
     SettingsPanel {
         objectName: "settingsPanel"
         app: root.app

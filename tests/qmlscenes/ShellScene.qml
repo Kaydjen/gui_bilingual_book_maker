@@ -9,5 +9,8 @@ ShellRoot {
     log: logVm
     frame: frameVm
     shell: shellVm
+    books: booksVm
+    add: addVm
+    reader: readerVm
     forceButtons: fake.forceButtons === true
 }

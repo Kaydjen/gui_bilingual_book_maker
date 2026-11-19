@@ -15,7 +15,7 @@ FocusScope {
     property real fraction: 0
 
     anchors.fill: parent
-    visible: kind !== ""
+    visible: kind === "closing" || kind === "trayFirst"
     z: 650
 
     function left_clicked() {

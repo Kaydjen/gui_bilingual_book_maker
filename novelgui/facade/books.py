@@ -317,7 +317,13 @@ def scan_chapters_task(ctx, series_path, book_name: str, want: Want) -> dict:
         from_cache = True
     else:
         book = open_book(bpath)
-        infos = [cl.ChapterInfo(ch.index, ch.href) for ch in book.chapters]
+        infos = []
+        for ch in book.chapters:        # the titles are cheap (0.3 s for 4000 chapters): the list is readable at once
+            try:
+                title = ch.title or ""
+            except Exception:
+                title = None
+            infos.append(cl.ChapterInfo(ch.index, ch.href, title))
         from_cache = False
     n = len(infos)
     ctx.emit(("skeleton", [i.public() for i in infos]))

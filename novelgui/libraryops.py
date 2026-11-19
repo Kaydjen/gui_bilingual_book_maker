@@ -228,3 +228,92 @@ def remove_volume(library, series_path, stem: str, job_book: str | None = None, 
         raise OpError("The volume could not be removed: %s. Nothing was changed; the volume is still in the "
                       "series." % reason(exc)) from None
     return dest
+
+
+# ---------------------------------------------------------------- undo of a delete / remove (window_spec 4.4)
+def restore_series(library, series_path, trashed) -> Path:
+    """Move a deleted series folder back to `series_path` (a taken name gets ` (2)`, ` (3)`); returns where it is now."""
+    sp = Path(series_path)
+    dest = sp.with_name(rules.free_name(sp.parent, sp.name))
+    try:
+        fs.replace(Path(trashed), dest)
+    except OSError as exc:
+        raise OpError("The series could not be brought back: %s. It is still in %s." % (reason(exc), trashed)) from None
+    return dest
+
+
+def restore_volume(series_path, trashed) -> list:
+    """Move the files of a removed volume from `trashed` back into the series, the book file last. Returns the
+    stems of the books that came back. Refuses (nothing moved) when a book of this name is in the series again."""
+    src, sp = Path(trashed), Path(series_path)
+    files = sorted((p for p in src.rglob("*") if p.is_file()),
+                   key=lambda p: (p.relative_to(src).parts[0] == "books", str(p)))
+    for p in files:
+        rel = p.relative_to(src)
+        if rel.parts[0] == "books" and (sp / rel).exists():
+            raise OpError("A book with this name is in the series again, so the removed one stays in %s." % src)
+    moved = []
+    try:
+        for p in files:
+            rel = p.relative_to(src)
+            fs.makedirs((sp / rel).parent)
+            fs.replace(p, sp / rel)
+            moved.append(rel)
+    except OSError as exc:
+        raise OpError("The book could not be brought back: %s. Its files are in %s." % (reason(exc), src)) from None
+    fs.remove_tree(src)
+    return [p.stem for p in moved if p.parts[0] == "books" and p.suffix == ".epub"]
+
+
+# ---------------------------------------------------------------- move a book to another series (window_spec 4.7)
+def has_translation(series_path, stem: str) -> bool:
+    """True when any chapter log of the book holds a finished block."""
+    folder = Path(series_path) / "chapters" / model.clean_name(stem, 80, "book")
+    try:
+        logs = sorted(folder.glob("*.jsonl"))
+    except OSError:
+        return False
+    for f in logs:
+        try:
+            if any(r.get("status") == "ok" for r in model.read_jsonl(f)):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def move_volume(src_series, stem: str, dst_series) -> str:
+    """Move `books/<stem>.epub` of a book with nothing translated to another series; returns its new stem. The file is
+    copied to `.part`, renamed, and only then the original goes (so a failure leaves the book where it was)."""
+    src = Path(src_series) / "books" / (stem + ".epub")
+    books = Path(dst_series) / "books"
+    if has_translation(src_series, stem):
+        raise OpError("This book has translated chapters, so it stays with its series.")
+    n, name = 1, stem
+    while (books / (name + ".epub")).exists():
+        n += 1
+        name = addbook.volume_name(stem, n, model.clean_name)
+    try:
+        fs.makedirs(books)
+        _copy_in(src, books, name)
+    except OSError as exc:
+        raise OpError("The book could not be moved: %s. It is still in its series." % reason(exc)) from None
+    leftovers = rules.volume_items(src_series, stem, model.clean_name)
+    for rel in leftovers:
+        p = Path(src_series) / rel
+        if rel == "books/%s.epub" % stem:
+            continue
+        fs.remove_tree(p) if p.is_dir() else fs.remove_file(p)
+
+    def drop_label(s):
+        labels = s.get(VOLUME_LABELS)
+        if isinstance(labels, dict) and stem in labels:
+            labels = dict(labels)
+            labels.pop(stem)
+            s[VOLUME_LABELS] = labels
+    try:
+        fs.update_series(src_series, drop_label)
+    except (OSError, ValueError):
+        pass
+    fs.remove_file(src)
+    return name

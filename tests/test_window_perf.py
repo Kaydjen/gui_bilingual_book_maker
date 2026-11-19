@@ -107,5 +107,22 @@ class SnapshotApply(unittest.TestCase):
         self.assertIsNotNone(app)
 
 
+@unittest.skipUnless(HAVE_QT, "PySide6 is not installed")
+class BooksChapterListScroll(unittest.TestCase):
+    """The REAL chapter list of Books (3000 chapters, scanned by the helper) keeps >= 80 % of its idle frames while a lane works."""
+
+    def test_the_chapter_list_scrolls_while_a_lane_is_busy(self):
+        env = dict(os.environ, PYTHONUTF8="1")
+        out = subprocess.run([sys.executable, str(HERE / "perf_books.py")], capture_output=True, text=True, env=env,
+                             timeout=300, cwd=str(HERE.parent))
+        self.assertEqual(out.returncode, 0, out.stdout[-1500:] + out.stderr[-2000:])
+        r = json.loads(out.stdout.strip().splitlines()[-1])
+        report("books scroll", r)
+        self.assertGreater(r["rows"], 2900)
+        self.assertGreater(r["idle"], 40)
+        self.assertGreater(r["work"], 100)
+        self.assertGreaterEqual(r["busy"], 0.8 * r["idle"], r)
+
+
 if __name__ == "__main__":
     unittest.main()

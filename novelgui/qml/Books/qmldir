@@ -1,0 +1,14 @@
+module Books
+AddPanel 1.0 AddPanel.qml
+AddRow 1.0 AddRow.qml
+BooksScreen 1.0 BooksScreen.qml
+Capsule 1.0 Capsule.qml
+ChapterList 1.0 ChapterList.qml
+ChapterRow 1.0 ChapterRow.qml
+CheckMark 1.0 CheckMark.qml
+HeadBox 1.0 HeadBox.qml
+DropFrame 1.0 DropFrame.qml
+MovePanel 1.0 MovePanel.qml
+ReaderTab 1.0 ReaderTab.qml
+SeriesList 1.0 SeriesList.qml
+SeriesRow 1.0 SeriesRow.qml

@@ -90,6 +90,7 @@ Floating {
                     color: row.off ? Theme.faint : (row.it.kind === "check" || rowHover.hovered || menu.hot === row.index ? Theme.bright : Theme.text)
                 }
                 HoverHandler { id: rowHover; enabled: !row.divider && !row.off; cursorShape: Qt.PointingHandCursor }
+                TipArea { enabled: !row.divider; tip: row.it.tip || "" }
                 TapHandler { enabled: !row.divider && !row.off; onTapped: menu.pick(row.index) }
             }
         }
