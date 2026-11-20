@@ -36,7 +36,7 @@ Item {
             if (pill.off)
                 return Theme.pillOff
             if (pill.kind === "flat")
-                return pill.hovered ? (pill.onCard ? Theme.pillOnPanel : Theme.menu) : "transparent"
+                return pill.hovered ? (pill.onCard ? Theme.pillOnPanel : Theme.menuOnPanel) : "transparent"
             if (pill.onLift)
                 return pill.hovered ? Theme.pillOnLiftHover : Theme.pillOnLift
             return Theme.pillFill(pill.onCard, pill.hovered)

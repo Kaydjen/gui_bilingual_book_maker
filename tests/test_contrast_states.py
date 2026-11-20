@@ -21,6 +21,11 @@ class OnPanel(unittest.TestCase):
         r = qh.scenario("OnPanel", actions=HOVER_CLOSE, tag="flat_hover")
         self.assertEqual(r.item("panelCloseFill")["color"], "#262626")      # Theme.pillOnPanel on the card #171717
 
+    def test_a_flat_button_on_a_hovered_row_stands_out_from_the_row(self):
+        r = qh.scenario("FlatRow", actions=[{"op": "wait", "ms": 300}, {"op": "moveTo", "name": "rowFlat"},
+                                            {"op": "wait", "ms": 300}], tag="flat_row_hover")
+        self.assertEqual(r.item("rowFlatFill")["color"], "#222222")         # Theme.menuOnPanel on the row hover #121212
+
     def test_a_flat_button_at_rest_has_no_fill(self):
         r = qh.scenario("OnPanel", actions=[{"op": "wait", "ms": 500}], tag="flat_rest")
         self.assertEqual(r.item("panelCloseFill")["color"], "#000000")
