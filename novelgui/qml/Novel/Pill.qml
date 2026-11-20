@@ -10,6 +10,7 @@ Item {
     property var tip: ""
     readonly property bool off: kind === "off"
     readonly property bool hovered: hover.hovered
+    readonly property bool onCard: Theme.onPanel(pill)
     readonly property color textColor: {
         if (kind === "off")
             return Theme.faint
@@ -34,7 +35,7 @@ Item {
                 return Theme.pillOff
             if (pill.kind === "flat")
                 return pill.hovered ? Theme.menu : "transparent"
-            return pill.hovered ? Theme.pillHover : Theme.pill
+            return Theme.pillFill(pill.onCard, pill.hovered)
         }
     }
     AppText {

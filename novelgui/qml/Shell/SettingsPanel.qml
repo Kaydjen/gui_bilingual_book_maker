@@ -71,6 +71,7 @@ FocusScope {
         level: 3
         radius: Theme.rPanel
         color: Theme.panel
+        property bool panelSurface: true
         MouseArea { anchors.fill: parent }
 
         Item {
@@ -229,7 +230,7 @@ FocusScope {
                             anchors.fill: parent
                             visible: !panel.editingPace
                             level: 1
-                            color: Theme.pill
+                            color: Theme.pillOnPanel
                             AppText {
                                 objectName: "paceValue"
                                 anchors.centerIn: parent

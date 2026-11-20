@@ -68,6 +68,7 @@ FocusScope {
         level: 3
         radius: Theme.rPanel
         color: Theme.panel
+        property bool panelSurface: true
         MouseArea { anchors.fill: parent }
 
         Column {

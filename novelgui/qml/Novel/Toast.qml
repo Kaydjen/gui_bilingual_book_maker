@@ -34,6 +34,7 @@ FocusScope {
         level: 3
         radius: 12
         color: Theme.panel
+        property bool panelSurface: true
 
         AppText {
             id: msg

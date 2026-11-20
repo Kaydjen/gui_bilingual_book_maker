@@ -64,6 +64,7 @@ FocusScope {
     Surface {
         id: card
         objectName: "panelCard"
+        property bool panelSurface: true
         anchors.centerIn: parent
         width: Math.min(panel.panelWidth, panel.width - 2 * panel.margin)
         height: Math.min(panel.height - 2 * panel.margin, 22 + head.height + inner.childrenRect.height + 16 + foot.height + 20)
