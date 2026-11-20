@@ -6,7 +6,7 @@ from __future__ import annotations
 from PySide6.QtCore import Property, QAbstractListModel, QModelIndex, QObject, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QGuiApplication
 
-from .. import platform
+from .. import platform, tips
 from ..ctl import winlog
 
 REFRESH_MS = 150
@@ -58,6 +58,10 @@ class LogVM(QObject):
     def _later(self) -> None:
         if not self._timer.isActive():
             self._timer.start()
+
+    @Property("QVariantMap", constant=True)
+    def tips(self):
+        return {"copy": tips.LOG_COPY}
 
     @Property(QObject, constant=True)
     def lines(self):

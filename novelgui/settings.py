@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 
+from . import platform
 from .runtime import paths
 
 ENV_DATA = "NOVELGUI_DATA"
@@ -27,11 +28,7 @@ def old_data_dir() -> Path:
     env = os.environ.get(ENV_OLD_DATA)
     if env:
         return Path(env)
-    if os.name == "nt":
-        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
-    else:
-        base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
-    return base / "bbm-gui"
+    return platform.local_data_base() / "bbm-gui"
 
 
 class Settings:

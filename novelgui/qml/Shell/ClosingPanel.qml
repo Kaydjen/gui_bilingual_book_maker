@@ -143,7 +143,7 @@ FocusScope {
                 anchors.left: parent.left
                 kind: "flat"
                 text: panel.kind === "trayFirst" ? "Quit" : (panel.info.close || "")
-                tip: panel.info.kind === "running" ? "Quit now. Only these requests are lost; Continue repeats them next time." : ""
+                tip: panel.info.kind === "running" ? panel.app.tips.closeNow : ""
                 onClicked: panel.left_clicked()
             }
             Pill {

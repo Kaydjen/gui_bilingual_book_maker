@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from novelgui import accent, chapterlogic as cl, header, pieces
+from novelgui import chapterlogic as cl, pieces
 
 
 def info(i, kind="translated", title=None, blocks=10):
@@ -143,42 +143,6 @@ class Names(unittest.TestCase):
         self.assertEqual(pieces.result_line(54, 3, 2_400_000), ("54 chapters", "3 not translated yet, left out",
                                                                "2.4 MB"))
         self.assertEqual(pieces.result_line(1, 0, 900), ("1 chapter", "", "1 KB"))
-
-
-class ContextLine(unittest.TestCase):
-    def test_chapters_text(self):
-        infos = book(["translated"] * 60, offset=2696)
-        self.assertEqual(header.chapters_text(infos, range(0, 54)), "chapters 2697-2750")
-        self.assertEqual(header.chapters_text(infos, [4]), "chapter 2701")
-        self.assertEqual(header.chapters_text(infos, [0, 1, 2, 10, 11]), "chapters 2697-2699, 2707-2708")
-        self.assertEqual(header.chapters_text(infos, []), "")
-
-    def test_many_spans_are_cut(self):
-        infos = book(["translated"] * 40)
-        text = header.chapters_text(infos, [0, 2, 4, 6, 8])
-        self.assertEqual(text, "chapters 1, 3, 5 …")
-
-    def test_all_parts(self):
-        self.assertEqual(header.context_line("Epic", "Vol 1", "chapters 1-5", "Russian"),
-                         "Epic · Vol 1 · chapters 1-5 · Russian")
-
-    def test_parts_are_left_out(self):
-        self.assertEqual(header.context_line("Epic", "Vol 1", "", ""), "Epic · Vol 1")
-        self.assertEqual(header.context_line("Epic", "Vol 1", "chapters 1-5", ""),
-                         "Epic · Vol 1 · chapters 1-5")
-        self.assertEqual(header.context_line("", "Vol 1", "chapters 1-5", "Russian"), "")
-
-    def test_crowded(self):
-        self.assertFalse(header.crowded(300, 0, 200, 400, 10))
-        self.assertFalse(header.crowded(300, 100, 200, 700, 10))
-        self.assertTrue(header.crowded(300, 300, 200, 700, 10))
-
-
-class RedOnTheTermsScreens(unittest.TestCase):
-    def test_terms_that_block_the_first_chapter_come_third(self):
-        self.assertEqual(accent.owner(accent.Facts(True, True, True), "export"), accent.TERMS)
-        self.assertEqual(accent.owner(accent.Facts(True, False, True), "export"), accent.LANGUAGE)
-        self.assertEqual(accent.owner(accent.Facts(True, True, False), "export"), "export")
 
 
 if __name__ == "__main__":

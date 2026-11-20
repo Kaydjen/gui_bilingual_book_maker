@@ -111,6 +111,11 @@ SHOW_FOLDER = "Opens the folder with the saved file."
 GO_TRANSLATE = "Opens Translate with chapters %s. Does not start."
 
 
+CONFIRM_TICKED = ("Confirm the ticked terms as they are (rows with two values or without a rendering stay; a confirmed "
+                  "term keeps the value in use).")
+EMPTY_IMPORT = "Add terms from a glossary file (JSON). Only adds, never replaces."
+
+
 def confirm_tip(n: int) -> str:
     return ("Accept the %d terms with one value in this list as they are:<br>· translation uses exactly them and they stop "
             "holding it up;<br>· the model will not change them later;<br>· they move to Confirmed, where you can still "

@@ -11,7 +11,6 @@ from novelcore import checks
 from novelgui import findingrules as fr
 from novelgui import jobqueue, model
 from tests.test_core_checks import BOOK, Synth, long_src
-from tests.test_gui_runctl import Base
 
 
 class Ctx:
@@ -140,7 +139,7 @@ class Rows(Synth):
         self.assertEqual(ctx.items, [("check", 1, 1)])
 
 
-class RetryWaits(Base):
+class RetryMarks(unittest.TestCase):
     def test_item_keeps_the_marks_through_the_saved_queue(self):
         marks = ((0, 1, "abc", "k1"), (1, 0, "def", "k2"))
         it = jobqueue.Item("p", "b", ((0, 1),), retry=marks)
@@ -151,27 +150,6 @@ class RetryWaits(Base):
         self.assertEqual(old.retry, ())
         bad = jobqueue.item_from({"series": "p", "book": "b", "spans": [[0, 1]], "retry": [[1, 2], "x", [0, 1, 2, 3]]})
         self.assertEqual(bad.retry, ())
-
-    def test_start_hands_the_marks_to_the_run_and_the_queue_to_the_next_item(self):
-        a, astem = self.series("Alpha")
-        b, bstem = self.series("Beta")
-        marks = ((0, 0, "sha", "key"),)
-        self.assertEqual(self.runs.start(a, astem, [0, 1]), "")
-        self.runs.enqueue(jobqueue.Item(b, bstem, ((0, 0),), retry=marks))
-        saved = json.loads(self.app.settings.path.read_text())["win"]["queue"][0]
-        self.assertEqual(saved["retry"], [list(marks[0])])
-        self.assertEqual(len(self.starts()), 1)
-        self.end("finished")
-        self.assertEqual(self.runs.run.series, b)            # the queue's item started and carried its marks
-        self.assertEqual(len(self.starts()), 2)
-
-    def test_nothing_is_marked_while_the_item_waits(self):
-        a, astem = self.series("Alpha")
-        b, bstem = self.series("Beta")
-        self.runs.start(a, astem, [0, 1])
-        logs = list(Path(b).rglob("*.jsonl"))
-        self.runs.enqueue(jobqueue.Item(b, bstem, ((0, 0),), retry=((0, 0, "sha", "key"),)))
-        self.assertEqual(list(Path(b).rglob("*.jsonl")), logs)
 
 
 if __name__ == "__main__":

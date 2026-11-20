@@ -114,7 +114,7 @@ Panel {
         height: 22
         text: "Draft"
         color: Theme.dim
-        TipArea { tip: "Unsaved text from the last time. Cancel throws it away." }
+        TipArea { tip: panel.translate.tips.promptDraft }
     }
     Connections {
         target: panel.translate

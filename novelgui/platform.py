@@ -2,154 +2,106 @@
 
 from __future__ import annotations
 
-import struct
+import os
+import subprocess
 import sys
-import zlib
+from pathlib import Path
 
 IS_WINDOWS = sys.platform == "win32"
-# Virtual-key codes of Ctrl+<letter> shortcuts, the same on every keyboard layout.
-KEYCODES = {86: "paste", 67: "copy", 88: "cut", 65: "all", 70: "find", 90: "undo"}
+APP_DIR = "novelgui"
+
+_CREATE_NO_WINDOW = 0x08000000
+_CREATE_NEW_CONSOLE = 0x00000010
+_DETACHED_PROCESS = 0x00000008
 
 
-def enable_dpi() -> None:
-    if not IS_WINDOWS:
-        return
-    try:
-        import ctypes
+def config_base() -> Path:
+    """The per-user folder for settings (Windows %APPDATA%, elsewhere $XDG_CONFIG_HOME or ~/.config)."""
+    if IS_WINDOWS:
+        return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+
+
+def local_data_base() -> Path:
+    """The per-user folder for local data (Windows %LOCALAPPDATA%, elsewhere $XDG_DATA_HOME or ~/.local/share)."""
+    if IS_WINDOWS:
+        return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+
+
+def no_window() -> dict:
+    """Extra `subprocess` arguments for a child process that must not open a console window ({} elsewhere)."""
+    return {"creationflags": _CREATE_NO_WINDOW} if IS_WINDOWS else {}
+
+
+def new_console() -> dict:
+    """Extra `subprocess` arguments for a child process that shows its own console ({} elsewhere)."""
+    return {"creationflags": _CREATE_NEW_CONSOLE} if IS_WINDOWS else {}
+
+
+def detached() -> dict:
+    """Extra `subprocess` arguments for a child process that lives on its own after the parent ends ({} elsewhere)."""
+    return {"creationflags": _DETACHED_PROCESS} if IS_WINDOWS else {}
+
+
+def venv_python(venv: str, windowed: bool = False) -> str:
+    """The interpreter inside a virtual environment folder; `windowed` picks pythonw on Windows (no console)."""
+    if IS_WINDOWS:
+        return os.path.join(venv, "Scripts", "pythonw.exe" if windowed else "python.exe")
+    return os.path.join(venv, "bin", "python")
+
+
+def console_python(exe: str) -> str:
+    """The console twin of a windowed interpreter (pythonw -> python) when it exists, else the same path."""
+    if IS_WINDOWS and exe.lower().endswith("pythonw.exe"):
+        console = exe[:-len("pythonw.exe")] + "python.exe"
+        if os.path.isfile(console):
+            return console
+    return exe
+
+
+def windowed_python(exe: str) -> str:
+    """The windowed twin of a console interpreter (python -> pythonw) when it exists, else the same path."""
+    if IS_WINDOWS and os.path.basename(exe).lower() == "python.exe":
+        w = os.path.join(os.path.dirname(exe), "pythonw.exe")
+        if os.path.isfile(w):
+            return w
+    return exe
+
+
+def pid_alive(pid: int) -> bool:
+    """True when a process with this id is running (or exists but is not ours to ask)."""
+    if pid <= 0:
+        return False
+    if IS_WINDOWS:
         try:
-            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+            import ctypes
+            from ctypes import wintypes
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            k32.OpenProcess.restype = wintypes.HANDLE
+            k32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+            k32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+            k32.CloseHandle.argtypes = (wintypes.HANDLE,)
+            h = k32.OpenProcess(0x00100000 | 0x1000, False, pid)     # SYNCHRONIZE | QUERY_LIMITED_INFORMATION
+            if not h:
+                return ctypes.get_last_error() == 5                  # access denied: it exists
+            try:
+                return k32.WaitForSingleObject(h, 0) == 0x102        # WAIT_TIMEOUT: still running
+            finally:
+                k32.CloseHandle(h)
         except Exception:
-            ctypes.windll.user32.SetProcessDPIAware()
-    except Exception:
-        pass
-
-
-def dark_titlebar(win) -> None:
-    """Dark caption colours (Windows 10/11)."""
-    if not IS_WINDOWS:
-        return
+            return True
     try:
-        from ctypes import byref, c_int, windll
-        win.update_idletasks()
-        hwnd = windll.user32.GetParent(win.winfo_id()) or win.winfo_id()
-        for attr, val in ((20, 1), (19, 1), (35, 0x000000), (36, 0xDEDEDE), (34, 0x1A1A1A)):
-            windll.dwmapi.DwmSetWindowAttribute(hwnd, attr, byref(c_int(val)), 4)
-    except Exception:
-        pass
-
-
-def default_data_dir():
-    """The settings folder of the program (the one place that builds it is runtime/paths.py)."""
-    from .runtime import paths
-    return paths.default_settings_dir()
-
-
-def write_png(path, w: int, h: int, rgb: bytes) -> None:
-    raw = b"".join(b"\x00" + rgb[y * w * 3:(y + 1) * w * 3] for y in range(h))
-
-    def chunk(tag, data):
-        c = struct.pack(">I", len(data)) + tag + data
-        return c + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
-
-    png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
-           + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
-    with open(path, "wb") as f:
-        f.write(png)
-
-
-def print_window(title: str, path) -> tuple[int, int]:
-    """Save the window with exactly this title to a PNG with PrintWindow (never a screen capture).
-    Returns (width, height); raises RuntimeError when the window is not found or off Windows."""
-    if not IS_WINDOWS:
-        raise RuntimeError("PrintWindow needs Windows")
-    import ctypes
-    from ctypes import wintypes
-    u32, g32 = ctypes.windll.user32, ctypes.windll.gdi32
-    u32.FindWindowW.restype = wintypes.HWND
-    u32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
-    u32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
-    u32.GetDC.restype = wintypes.HDC
-    u32.GetDC.argtypes = [wintypes.HWND]
-    u32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
-    u32.PrintWindow.argtypes = [wintypes.HWND, wintypes.HDC, wintypes.UINT]
-    g32.CreateCompatibleDC.restype = wintypes.HDC
-    g32.CreateCompatibleDC.argtypes = [wintypes.HDC]
-    g32.CreateCompatibleBitmap.restype = wintypes.HBITMAP
-    g32.CreateCompatibleBitmap.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int]
-    g32.SelectObject.restype = wintypes.HGDIOBJ
-    g32.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
-    g32.DeleteObject.argtypes = [wintypes.HGDIOBJ]
-    g32.DeleteDC.argtypes = [wintypes.HDC]
-    g32.GetDIBits.argtypes = [wintypes.HDC, wintypes.HBITMAP, wintypes.UINT, wintypes.UINT, ctypes.c_void_p,
-                              ctypes.c_void_p, wintypes.UINT]
-
-    class BIH(ctypes.Structure):
-        _fields_ = [("biSize", wintypes.DWORD), ("biWidth", wintypes.LONG), ("biHeight", wintypes.LONG),
-                    ("biPlanes", wintypes.WORD), ("biBitCount", wintypes.WORD), ("biCompression", wintypes.DWORD),
-                    ("biSizeImage", wintypes.DWORD), ("biXPelsPerMeter", wintypes.LONG),
-                    ("biYPelsPerMeter", wintypes.LONG), ("biClrUsed", wintypes.DWORD),
-                    ("biClrImportant", wintypes.DWORD)]
-
-    hwnd = u32.FindWindowW(None, title)
-    if not hwnd:
-        raise RuntimeError("window not found by title")
-    r = wintypes.RECT()
-    u32.GetWindowRect(hwnd, ctypes.byref(r))
-    w, h = r.right - r.left, r.bottom - r.top
-    sdc = u32.GetDC(None)
-    mdc = g32.CreateCompatibleDC(sdc)
-    bmp = g32.CreateCompatibleBitmap(sdc, w, h)
-    old = g32.SelectObject(mdc, bmp)
-    u32.PrintWindow(hwnd, mdc, 2)
-    bi = BIH(ctypes.sizeof(BIH), w, -h, 1, 32, 0, 0, 0, 0, 0, 0)
-    buf = (ctypes.c_ubyte * (w * h * 4))()
-    g32.GetDIBits(mdc, bmp, 0, h, buf, ctypes.byref(bi), 0)
-    g32.SelectObject(mdc, old)
-    g32.DeleteObject(bmp)
-    g32.DeleteDC(mdc)
-    u32.ReleaseDC(None, sdc)
-    bgra = bytes(buf)
-    rgb = bytearray(w * h * 3)
-    rgb[0::3] = bgra[2::4]
-    rgb[1::3] = bgra[1::4]
-    rgb[2::3] = bgra[0::4]
-    write_png(path, w, h, bytes(rgb))
-    return w, h
-
-
-def window_handle(win) -> int:
-    """The top-level window handle of a Tk window (0 off Windows)."""
-    if not IS_WINDOWS:
-        return 0
-    try:
-        from ctypes import windll
-        win.update_idletasks()
-        return int(windll.user32.GetParent(win.winfo_id()) or win.winfo_id())
-    except Exception:
-        return 0
-
-
-def raise_window(hwnd: int) -> bool:
-    """Bring the window with this handle to the front (restored when minimised). False when it is gone."""
-    if not IS_WINDOWS or not hwnd:
+        os.kill(pid, 0)
+    except ProcessLookupError:
         return False
-    try:
-        from ctypes import windll
-        u32 = windll.user32
-        if not u32.IsWindow(hwnd):
-            return False
-        if u32.IsIconic(hwnd):
-            u32.ShowWindow(hwnd, 9)         # SW_RESTORE
-        u32.SetForegroundWindow(hwnd)
+    except PermissionError:
         return True
-    except Exception:
-        return False
+    return True
 
 
 def open_folder(path) -> bool:
     """Show a folder in the file manager."""
-    import os
-    import subprocess
     try:
         if IS_WINDOWS:
             os.startfile(str(path))  # noqa: S606
@@ -164,8 +116,6 @@ def open_folder(path) -> bool:
 
 def reveal_file(path) -> bool:
     """Show a file in the file manager with the file selected (Linux: its folder)."""
-    import subprocess
-    from pathlib import Path
     p = Path(path)
     try:
         if IS_WINDOWS:

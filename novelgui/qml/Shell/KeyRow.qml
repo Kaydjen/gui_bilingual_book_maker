@@ -12,6 +12,7 @@ Item {
     required property string word
     required property bool red
     required property string tip
+    property var tips: ({})
     signal removeClicked()
 
     width: ListView.view ? ListView.view.width : 300
@@ -56,7 +57,7 @@ Item {
         }
         HoverHandler { id: xHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: row.removeClicked() }
-        TipArea { tip: "Remove this key" }
+        TipArea { tip: row.tips.keyRemove }
     }
     HoverHandler { id: hover }
 }

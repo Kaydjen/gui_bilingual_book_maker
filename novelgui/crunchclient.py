@@ -22,7 +22,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment
 
-from . import wire
+from . import platform, wire
 from .lanes import Token
 
 log = logging.getLogger("novelgui.crunch")
@@ -61,12 +61,7 @@ class _Task:
 
 
 def default_python() -> str:
-    exe = Path(sys.executable)
-    if os.name == "nt" and exe.name.lower() == "python.exe":
-        w = exe.with_name("pythonw.exe")       # no console window for the helper
-        if w.is_file():
-            return str(w)
-    return str(exe)
+    return platform.windowed_python(str(sys.executable))       # no console window for the helper
 
 
 class CrunchClient(QObject):

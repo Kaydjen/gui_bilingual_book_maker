@@ -20,6 +20,11 @@ Window {
 
     property string startUrl: ""
 
+    function localUrl(p) {
+        const q = p.replace(/\\/g, "/")
+        return q.startsWith("/") ? "file://" + q : "file:///" + q
+    }
+
     function remember() {
         if (visible && visibility !== Window.Minimized && visibility !== Window.Hidden)
             appVm.geometryChanged(x, y, width, height, visibility === Window.Maximized)
@@ -63,7 +68,7 @@ Window {
     Connections {
         target: appVm
         function onFolderDialogRequested(start) {
-            root.startUrl = "file:///" + start.split("\\").join("/")
+            root.startUrl = localUrl(start)
             if (folderLoader.active)
                 folderLoader.item.open()    // qmllint disable missing-property
             else
@@ -87,7 +92,7 @@ Window {
     Connections {
         target: booksVm
         function onFilesDialogRequested(start) {
-            root.startUrl = "file:///" + start.split("\\").join("/")
+            root.startUrl = localUrl(start)
             if (filesLoader.active)
                 filesLoader.item.open()    // qmllint disable missing-property
             else
@@ -111,7 +116,7 @@ Window {
     Connections {
         target: termsVm
         function onImportDialogRequested(start) {
-            root.startUrl = "file:///" + start.split("\\").join("/")
+            root.startUrl = localUrl(start)
             if (importLoader.active)
                 importLoader.item.open()    // qmllint disable missing-property
             else
@@ -145,7 +150,7 @@ Window {
     Connections {
         target: termsVm
         function onOpenFolderRequested(path) {
-            Qt.openUrlExternally("file:///" + path.split("\\").slice(0, -1).join("/"))
+            Qt.openUrlExternally(localUrl(path.replace(/\\/g, "/").split("/").slice(0, -1).join("/")))
         }
     }
 

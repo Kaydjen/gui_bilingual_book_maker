@@ -14,6 +14,7 @@ Item {
     required property bool canUp
     required property bool canDown
     required property string tip
+    property var tips: ({})
     signal moveClicked(int delta)
     signal removeClicked()
     signal renamed(string text)
@@ -44,7 +45,7 @@ Item {
                 edit.input.forceActiveFocus()
             }
         }
-        TipArea { tip: "Double-click: edit the name (Google renames models now and then)." }
+        TipArea { tip: row.tips.modelEdit }
     }
     Field {
         id: edit
@@ -93,7 +94,7 @@ Item {
                 }
                 HoverHandler { id: arrowHover; enabled: arrow.usable; cursorShape: Qt.PointingHandCursor }
                 TapHandler { enabled: arrow.usable; onTapped: row.moveClicked(arrow.modelData.delta) }
-                TipArea { tip: arrow.usable ? (arrow.modelData.delta < 0 ? "Move up" : "Move down") : "" }
+                TipArea { tip: arrow.usable ? (arrow.modelData.delta < 0 ? row.tips.modelUp : row.tips.modelDown) : "" }
             }
         }
     }
@@ -112,7 +113,7 @@ Item {
         }
         HoverHandler { id: xHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: row.removeClicked() }
-        TipArea { tip: "Remove this model" }
+        TipArea { tip: row.tips.modelRemove }
     }
     HoverHandler { id: hover }
 }
