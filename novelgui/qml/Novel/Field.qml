@@ -48,6 +48,8 @@ Item {
             leave()
         }
     }
+    // the owner may take this field away while it handles `committed` (a row rebuilt, a loader unloaded): what follows touches
+    // the objects through locals only, never through a function of the destroyed context
     function commit() {
         var t = textInput.text
         if (!ok(t)) {
@@ -55,8 +57,6 @@ Item {
             return
         }
         invalid = false
-        // the owner may take this field away while it handles `committed` (a row rebuilt, a loader unloaded): what follows
-        // touches the objects through locals only, never through a function of the destroyed context
         var me = field
         var input = textInput
         me.finishing = true
@@ -64,8 +64,7 @@ Item {
             value = t
             committed(t)
         }
-        input.focus = false
-        me.focus = false
+        input.focus = me.focus = false
         me.finishing = false
     }
     function revert() {
