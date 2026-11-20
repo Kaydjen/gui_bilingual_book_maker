@@ -95,8 +95,14 @@ RowBase {
             sourceComponent: Inset {
                 objectName: "termSlot_" + row.rowIndex
                 edge: slot.activeFocus ? Theme.fieldFocus : Theme.fieldLine
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.IBeamCursor
+                    onPressed: slot.forceActiveFocus()
+                }
                 TextInput {
                     id: slot
+                    property bool settled: false
                     x: 6
                     width: parent.width - 12
                     height: parent.height
@@ -105,7 +111,19 @@ RowBase {
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontSize
                     clip: true
-                    onAccepted: row.terms.nameRendering(row.rowIndex, text)
+                    function give() {
+                        if (settled)
+                            return
+                        settled = true
+                        row.terms.nameRendering(row.rowIndex, text)
+                    }
+                    onAccepted: give()
+                    onActiveFocusChanged: if (!activeFocus) give()          // a click away or Tab names it, as a field commits
+                    Keys.onEscapePressed: {
+                        settled = true
+                        text = ""
+                        focus = false
+                    }
                 }
                 TipArea { tip: row.terms.tips.slot }
             }

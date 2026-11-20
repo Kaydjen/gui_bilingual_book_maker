@@ -25,6 +25,8 @@ Floating {
         return { kind: "", text: e }
     }
     function pick(i) {
+        if (!visible)
+            return
         var it = parse(items[i])
         if (it.kind === "off" || it.kind === "divider")
             return

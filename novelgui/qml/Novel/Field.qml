@@ -16,7 +16,7 @@ Item {
     property bool multiline: false
     property alias input: textInput
     property bool invalid: false
-    readonly property bool editing: textInput.activeFocus
+    property bool editing: false             // set by the field itself, after a commit: the owner sees `editing` end only then
     property string old: ""
     property bool finishing: false
     signal committed(string text)
@@ -55,11 +55,18 @@ Item {
             return
         }
         invalid = false
+        // the owner may take this field away while it handles `committed` (a row rebuilt, a loader unloaded): what follows
+        // touches the objects through locals only, never through a function of the destroyed context
+        var me = field
+        var input = textInput
+        me.finishing = true
         if (t !== old) {
             value = t
             committed(t)
         }
-        leave()
+        input.focus = false
+        me.focus = false
+        me.finishing = false
     }
     function revert() {
         textInput.text = old
@@ -72,6 +79,12 @@ Item {
     Inset {
         anchors.fill: parent
         edge: field.invalid ? Theme.accent : (textInput.activeFocus ? Theme.fieldFocus : Theme.fieldLine)
+    }
+    MouseArea {
+        // the 8 px margins of the box: a click there focuses the input and never falls to a row behind the field
+        anchors.fill: parent
+        cursorShape: Qt.IBeamCursor
+        onPressed: textInput.forceActiveFocus()
     }
     TextInput {
         id: textInput
@@ -88,12 +101,16 @@ Item {
         selectByMouse: true
         activeFocusOnTab: true
         onActiveFocusChanged: {
+            var me = field                  // the owner may destroy the field while it handles a commit: locals only after it
             if (activeFocus) {
-                field.old = field.value
-                field.invalid = false
+                me.old = me.value
+                me.invalid = false
                 selectAll()
-            } else if (!field.finishing && text !== field.old) {
-                field.commit()          // focus left by a click elsewhere or Tab
+                me.editing = true
+            } else {
+                if (!me.finishing && text !== me.old)
+                    me.commit()             // focus left by a click elsewhere or Tab
+                me.editing = false
             }
         }
         Keys.onReturnPressed: event => {

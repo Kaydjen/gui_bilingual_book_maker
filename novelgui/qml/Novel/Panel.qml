@@ -29,6 +29,7 @@ FocusScope {
     z: 600
 
     function open() {
+        keeper.remember()
         visible = true
         forceActiveFocus()
     }
@@ -43,8 +44,16 @@ FocusScope {
         close()
     }
     function accept() {
+        if (!visible)
+            return
         if (actionText !== "" && actionEnabled)
             accepted()
+    }
+
+    onVisibleChanged: if (!visible) keeper.restore()
+    FocusKeeper {
+        id: keeper
+        owner: panel
     }
 
     Rectangle {

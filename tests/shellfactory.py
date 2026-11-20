@@ -123,6 +123,8 @@ def make(data):
                "exportVm": parts.export_vm}
     extras = {
         "__close": parts.close,
+        "attr": lambda obj, name: getattr(objects[obj], name),
+        "seriesTitle": lambda folder: json.loads((lib / folder / "series.json").read_text(encoding="utf-8")).get("name"),
         "tray": lambda: {"lines": parts.tray.lines, "actions": parts.tray.actions, "tooltip": parts.tray.tooltip,
                          "alert": parts.tray.alert},
         "notify": lambda: _lines(data_dir / "notify.log"),

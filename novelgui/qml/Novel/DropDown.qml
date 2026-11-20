@@ -40,6 +40,8 @@ Floating {
             pick(hot)
     }
     function pick(i) {
+        if (!visible)
+            return
         var e = entries[i]
         if (!selectable(e))
             return
@@ -71,6 +73,11 @@ Floating {
                 height: parent.height
                 text: dd.placeholder
                 color: Theme.faint
+            }
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.IBeamCursor
+                onPressed: filterField.forceActiveFocus()
             }
             TextInput {
                 id: filterField

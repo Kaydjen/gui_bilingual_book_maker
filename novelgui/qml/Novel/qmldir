@@ -15,6 +15,7 @@ DropDown 1.0 DropDown.qml
 Fades 1.0 Fades.qml
 Field 1.0 Field.qml
 Floating 1.0 Floating.qml
+FocusKeeper 1.0 FocusKeeper.qml
 FocusRing 1.0 FocusRing.qml
 Inset 1.0 Inset.qml
 LetterWave 1.0 LetterWave.qml
@@ -22,6 +23,7 @@ Menu 1.0 Menu.qml
 Message 1.0 Message.qml
 Panel 1.0 Panel.qml
 Pill 1.0 Pill.qml
+ReadText 1.0 ReadText.qml
 RowBase 1.0 RowBase.qml
 ScrollAssist 1.0 ScrollAssist.qml
 Sat 1.0 Sat.qml
@@ -32,5 +34,6 @@ Spinner 1.0 Spinner.qml
 Surface 1.0 Surface.qml
 Tip 1.0 Tip.qml
 TipArea 1.0 TipArea.qml
+TruncTip 1.0 TruncTip.qml
 TipLayer 1.0 TipLayer.qml
 Toast 1.0 Toast.qml

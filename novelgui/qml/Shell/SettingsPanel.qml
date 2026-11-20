@@ -35,13 +35,19 @@ FocusScope {
         glowRect.height = t.height + 6
         flash.restart()
     }
+    FocusKeeper {
+        id: keeper
+        owner: panel
+    }
     onVisibleChanged: {
         if (visible) {
+            keeper.remember()
             forceActiveFocus()
             vm.measureAppData()
             vm.refreshStates()
         } else {
             addingKey = false
+            keeper.restore()
         }
     }
     Connections {
@@ -57,10 +63,8 @@ FocusScope {
         MouseArea {
             anchors.fill: parent
             acceptedButtons: Qt.AllButtons
-            onPressed: {
-                card.forceActiveFocus()
-                panel.close()
-            }
+            onPressed: card.forceActiveFocus()          // the field loses focus and commits
+            onReleased: panel.close()                   // on the release, as Panel does
         }
     }
     Surface {

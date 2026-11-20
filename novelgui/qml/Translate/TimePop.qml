@@ -19,6 +19,7 @@ Floating {
     function openRight(item) {
         anchorItem = item
         var p = item.mapToItem(pop, item.width, item.height + 4)
+        rememberFocus()
         visible = true
         place(p.x - cardWidth, p.y)
         forceActiveFocus()

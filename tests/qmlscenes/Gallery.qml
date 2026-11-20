@@ -175,6 +175,8 @@ AppRoot {
         Pill { id: opener; text: "Opener ▾"; objectName: "opener"; onClicked: dd.openUnder(opener) }
     }
 
+    Pill { objectName: "panelOpener"; x: 160; y: 610; text: "Panel"; onClicked: panel.open() }
+
     // ---- overlays (one at a time)
     DropDown {
         id: dd
@@ -221,6 +223,11 @@ AppRoot {
                 AppText { required property int index; text: "Line " + (index + 1); color: Theme.dim }
             }
         }
+    }
+    Timer {
+        running: fake.toastAfter === true
+        interval: 1500
+        onTriggered: toast.show("A late message")
     }
     Item { objectName: "liveProbe"; visible: false; property bool live: Visual.live }
     Toast {

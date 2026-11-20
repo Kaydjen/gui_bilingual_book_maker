@@ -42,6 +42,7 @@ FocusScope {
         if (i >= 0)
             rowDragged(i)
     }
+    onActiveFocusChanged: if (activeFocus) Focus.home = table
     onCursorIndexChanged: if (cursorIndex >= 0) listView.positionViewAtIndex(cursorIndex, ListView.Contain)
 
     Rectangle {

@@ -21,6 +21,9 @@ FocusScope {
     visible: false
     z: 500
 
+    function rememberFocus() {
+        keeper.remember()
+    }
     function place(px, py) {
         cardX = Math.max(8, Math.min(px, width - cardWidth - 8))
         var h = cardSurface.height
@@ -29,12 +32,14 @@ FocusScope {
     function openUnder(item) {
         anchorItem = item
         var p = item.mapToItem(floating, 0, item.height + 4)
+        rememberFocus()
         visible = true
         place(p.x, p.y)
         forceActiveFocus()
     }
     function openAt(px, py) {
         anchorItem = null
+        rememberFocus()
         visible = true
         place(px, py)
         forceActiveFocus()
@@ -44,6 +49,12 @@ FocusScope {
             return
         visible = false
         closed()
+    }
+
+    onVisibleChanged: if (!visible) keeper.restore()
+    FocusKeeper {
+        id: keeper
+        owner: floating
     }
 
     MouseArea {

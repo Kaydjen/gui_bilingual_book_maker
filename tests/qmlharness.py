@@ -291,7 +291,7 @@ def _child(req: dict) -> int:
                 d.update(x=p.x(), y=p.y(), w=o.width(), h=o.height(), visible=o.isVisible(), opacity=o.opacity())
             for prop in ("text", "color", "radius", "running", "enabled", "currentIndex", "value", "selected", "current",
                          "contentY", "contentHeight", "count", "kind", "activeFocus", "live", "checked", "settled", "fraction", "auto",
-                         "cursorPosition"):
+                         "cursorPosition", "plain", "rich", "selectedText"):
                 v = o.property(prop)
                 if v is not None:
                     d[prop] = val(v)
@@ -367,7 +367,9 @@ def _child(req: dict) -> int:
                 spin(30)
         elif op == "click":
             QTest.mouseClick(view, Qt.RightButton if a.get("button") == "right" else Qt.LeftButton, mods[a.get("mod", "")],
-                             center(a["name"]))
+                             center(a["name"]) + QPoint(a.get("dx", 0), a.get("dy", 0)))
+        elif op == "dclick":
+            QTest.mouseDClick(view, Qt.LeftButton, mods[a.get("mod", "")], center(a["name"]))
         elif op == "clickAt":
             QTest.mouseClick(view, Qt.RightButton if a.get("button") == "right" else Qt.LeftButton, mods[a.get("mod", "")],
                              QPoint(a["x"], a["y"]))

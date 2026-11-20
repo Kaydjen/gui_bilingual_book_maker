@@ -19,6 +19,16 @@ Item {
         return v ? v.owner : null
     }
 
+    // what a press on the row does (cells that take their own clicks call it to behave as the rest of the row)
+    function pressRow(button, modifiers) {
+        if (owner)
+            owner.pressedAt(rowIndex, button, (modifiers & Qt.ControlModifier) !== 0, (modifiers & Qt.ShiftModifier) !== 0)
+    }
+    function dragRow(item, x, y) {
+        if (owner)
+            owner.draggedTo(item.mapToItem(owner.contentItem, x, y))
+    }
+
     width: ListView.view ? ListView.view.width : 200
     height: Theme.rowHeight
 
@@ -65,13 +75,10 @@ Item {
         anchors.fill: parent
         z: -1
         acceptedButtons: Qt.LeftButton | Qt.RightButton
-        onPressed: event => {
-            if (base.owner)
-                base.owner.pressedAt(base.rowIndex, event.button, (event.modifiers & Qt.ControlModifier) !== 0, (event.modifiers & Qt.ShiftModifier) !== 0)
-        }
+        onPressed: event => base.pressRow(event.button, event.modifiers)
         onPositionChanged: event => {
-            if (pressed && base.owner)
-                base.owner.draggedTo(mouse.mapToItem(base.owner.contentItem, event.x, event.y))
+            if (pressed)
+                base.dragRow(mouse, event.x, event.y)
         }
         onDoubleClicked: if (base.owner) base.owner.rowActivated(base.rowIndex)
     }

@@ -67,7 +67,7 @@ RowBase {
             font.weight: row.broken ? Font.Bold : Font.Normal
         }
         AppText {
-            objectName: "seriesDots"
+            objectName: "seriesDots" + row.rowIndex
             visible: !row.editing && row.dotsShown && !row.broken
             anchors.right: parent.right
             anchors.rightMargin: 12
@@ -99,6 +99,7 @@ RowBase {
         }
     }
     TapHandler {
+        enabled: !dots.hovered                  // a tap on `•••` opens the menu only, it does not also pick the row
         acceptedButtons: Qt.LeftButton
         onTapped: if (!row.editing) row.books.pickRow(row.rowIndex)
         onDoubleTapped: if (!row.editing && !row.broken) row.books.startRename(row.isBook ? "book" : "series", row.key)
