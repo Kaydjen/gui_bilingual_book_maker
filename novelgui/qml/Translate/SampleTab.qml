@@ -11,6 +11,39 @@ Item {
     readonly property var info: translate.sampleResult
     readonly property bool pending: info.pending === true
     property real glint: 0
+    readonly property var shownRows: (tab.info.rows || []).length === 0 && tab.pending
+                                     ? [{ src: "", tr: "", failed: false }, { src: "", tr: "", failed: false }, { src: "", tr: "", failed: false }]
+                                     : (tab.info.rows || [])
+
+    // the list keeps its place when rows are added at the end (`Next 50`): only rows that are new are appended
+    function sameStart(rows) {
+        if (rowsList.count > rows.length)
+            return false
+        for (var i = 0; i < rowsList.count; ++i)
+            if (rowsList.get(i).src !== (rows[i].src || ""))
+                return false
+        return true
+    }
+    function row(r) {
+        return { src: r.src || "", tr: r.tr || "", failed: r.failed === true }
+    }
+    function sync() {
+        var rows = tab.shownRows
+        if (!sameStart(rows))
+            rowsList.clear()
+        for (var i = 0; i < rows.length; ++i) {
+            if (i < rowsList.count)
+                rowsList.set(i, row(rows[i]))
+            else
+                rowsList.append(row(rows[i]))
+        }
+    }
+    onShownRowsChanged: sync()
+    Component.onCompleted: sync()
+
+    ListModel {
+        id: rowsList
+    }
 
     Item {
         id: head
@@ -35,6 +68,18 @@ Item {
                 color: Theme.dim
             }
         }
+        Pill {
+            objectName: "sampleNext"
+            visible: tab.info.more === true
+            anchors.right: parent.right
+            anchors.rightMargin: 12
+            anchors.verticalCenter: parent.verticalCenter
+            height: 26
+            kind: tab.info.nextEnabled === true ? "flat" : "off"
+            text: "Next 50"
+            tip: tab.info.nextTip || ""
+            onClicked: tab.translate.sampleNext()
+        }
         Rectangle {
             anchors.bottom: parent.bottom
             x: 6
@@ -52,15 +97,17 @@ Item {
         bottomMargin: 84
         clip: true
         boundsBehavior: Flickable.StopAtBounds
-        model: (tab.info.rows || []).length === 0 && tab.pending ? [{ src: "", tr: "" }, { src: "", tr: "" }, { src: "", tr: "" }] : (tab.info.rows || [])
+        model: rowsList
         delegate: Item {
             id: pair
             required property int index
-            required property var modelData
-            readonly property bool blank: (pair.modelData.src || "") === ""
-            readonly property bool waiting: tab.pending && (pair.modelData.tr || "") === ""
+            required property string src
+            required property string tr
+            required property bool failed
+            readonly property bool blank: pair.src === ""
+            readonly property bool waiting: tab.pending && pair.tr === "" && !pair.failed
             width: ListView.view.width
-            height: Math.max(blank ? 28 : source.implicitHeight, waiting ? 28 : target.implicitHeight) + 20
+            height: Math.max(blank ? 28 : source.height, waiting ? 28 : target.height) + 20
 
             Rectangle {
                 anchors.bottom: parent.bottom
@@ -75,33 +122,25 @@ Item {
                 height: parent.height
                 color: Theme.divider
             }
-            AppText {
+            ReadText {
                 id: source
                 objectName: "sampleSource" + pair.index
                 visible: !pair.blank
                 x: 14
                 y: 10
                 width: parent.width / 2 - 28
-                height: implicitHeight
-                verticalAlignment: Text.AlignTop
-                wrapMode: Text.Wrap
-                lineHeight: 1.3
-                text: pair.modelData.src
+                plain: pair.src
                 color: Theme.dim
             }
-            AppText {
+            ReadText {
                 id: target
                 objectName: "sampleTarget" + pair.index
                 visible: !pair.waiting
                 x: parent.width / 2 + 14
                 y: 10
                 width: parent.width / 2 - 28
-                height: implicitHeight
-                verticalAlignment: Text.AlignTop
-                wrapMode: Text.Wrap
-                lineHeight: 1.3
-                text: pair.modelData.failed ? "not translated" : (pair.modelData.tr || "")
-                color: pair.modelData.failed ? Theme.dim : Theme.bright
+                plain: pair.failed ? "not translated" : pair.tr
+                color: pair.failed ? Theme.dim : Theme.bright
             }
             SkeletonBars {
                 objectName: "sampleSkeleton" + pair.index

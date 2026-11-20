@@ -720,6 +720,7 @@ class TranslateVM(QObject):
         if top != self._top:
             self._top = top
             self.topChanged.emit()
+            self.sampleChanged.emit()               # `Next 50` is as enabled as Sample is
 
     def _pace(self) -> int:
         try:
@@ -1036,9 +1037,9 @@ class TranslateVM(QObject):
             return
         if "translated" in self.chapter_rows.row(row)[7].split(","):
             self.books.readChapter(self._rows_pos[row])
-
         else:
             self.app.message = tips.READ_OFF                # the same words as the tip of the menu item
+
     @Slot(int, int)
     def visibleRows(self, first: int, last: int) -> None:
         """The rows the list shows now (the chapter scan serves them first)."""
@@ -1598,8 +1599,8 @@ class TranslateVM(QObject):
         if name != "default" and text is None:
             self.app.message = "The prompt %s cannot be read." % name
             return
-        self._series = dict(self._series, prompt=name)
         was = self._series["prompt"]
+        self._series = dict(self._series, prompt=name)
         self._compute_top()
         self.lanes.submit(lambda ctx: fbooks.apply_prompt(path, name, text),
                           on_error=lambda exc: self._prompt_not_saved(path, was, exc), lane="data")
@@ -1616,8 +1617,8 @@ class TranslateVM(QObject):
         text = self.prompts.read(name)
         if text is None or name.lower() == RESERVED:
             return
-        self.prompts.delete(name)
         was_current = str(self._series["prompt"]) == name
+        self.prompts.delete(name)
         self._prompt_trash = (name, text, was_current, self._path)
         if was_current:
             self.choosePrompt("default")
@@ -1754,7 +1755,7 @@ class TranslateVM(QObject):
         chapter = min(self._positions)
         path, book = self._path, self._book
         self._samples[path] = {"chapter": chapter, "title": "", "rows": [], "unreviewed": self._gate.get(chapter, 0),
-                               "pending": True}
+                               "pending": True, "n": SAMPLE_BLOCKS, "total": 0, "keep": False}
         why = rc.start_sample(path, book, chapter, SAMPLE_BLOCKS)
         if why:
             self._samples.pop(path, None)
@@ -1762,6 +1763,23 @@ class TranslateVM(QObject):
             return
         self._tab = "sample"
         self._compute_tabs()
+        self.sampleChanged.emit()
+        self.tabsChanged.emit()
+
+    @Slot()
+    def sampleNext(self) -> None:
+        """`Next 50`: the sample of this chapter goes on for 50 more blocks; what is shown and what is done stays."""
+        rc, s = self.rc, self._samples.get(self._path)
+        if rc is None or s is None or s["pending"] or not s.get("more") or rc.run is not None:
+            return
+        if not self._top.get("sampleEnabled"):
+            return
+        why = rc.start_sample(self._path, self._book, s["chapter"], s["n"], keep=True)
+        if why:
+            self.app.message = why
+            return
+        s["n"] += SAMPLE_BLOCKS
+        s["pending"], s["keep"] = True, True
         self.sampleChanged.emit()
         self.tabsChanged.emit()
 
@@ -1776,7 +1794,13 @@ class TranslateVM(QObject):
             cur = self._samples.get(path)
             if cur is None:
                 return
+            rows, total = res
+            if cur["keep"]:
+                while rows and not rows[-1][1] and not rows[-1][2]:
+                    rows = rows[:-1]            # a cancelled `Next 50`: only what was done is shown, the next one goes on from it
+                cur["n"] = max(len(rows), n - SAMPLE_BLOCKS)
             cur["rows"] = [{"src": a, "tr": b or "", "failed": bool(c)} for a, b, c in rows]
+            cur["total"], cur["more"] = total, total > len(rows)
             cur["pending"] = False
             self._compute_tabs()
             self.sampleChanged.emit()
@@ -1788,7 +1812,7 @@ class TranslateVM(QObject):
             self.tabsChanged.emit()
             self.sampleChanged.emit()
 
-        self.lanes.submit(lambda ctx: frun.sample_rows(path, book, chapter, SAMPLE_BLOCKS), on_result=got,
+        self.lanes.submit(lambda ctx: frun.sample_rows(path, book, chapter, n, total=True), on_result=got,
                           on_error=failed, lane="read")
         self._compute_top()
 
@@ -1800,11 +1824,14 @@ class TranslateVM(QObject):
         infos = self.books.session.infos
         n = bookrows.shown_numbers([infos[s["chapter"]]])[0] if s["chapter"] < len(infos) else s["chapter"] + 1
         title = "Sample" if not s["unreviewed"] else "Sample · %d %s unreviewed" % (
-            cur["total"], cur["more"] = total, total > len(rows)
             s["unreviewed"], "term" if s["unreviewed"] == 1 else "terms")
         run = self.rc.run if self.rc else None
         busy_now = bool(run is not None and run.kind == "sample")
-        return {"open": True, "title": title, "sub": "chapter %s · first %d blocks" % (n, SAMPLE_BLOCKS),
+        more = bool(s.get("more")) and not (s["pending"] or busy_now)
+        enabled = bool(self._top.get("sampleEnabled"))
+        return {"open": True, "title": title, "sub": "chapter %s · first %d blocks" % (n, max(len(s["rows"]), s["n"])),
+                "more": more, "nextEnabled": more and enabled, "nextTip": tips.TR_SAMPLE_NEXT if enabled
+                else (self._top.get("sampleTip") or tips.TR_SAMPLE_NEXT),
                 "rows": s["rows"], "pending": s["pending"] or busy_now,
                 "unreviewedTip": tips.TR_SAMPLE_UNREVIEWED % s["unreviewed"] if s["unreviewed"] else ""}
 
@@ -1835,6 +1862,21 @@ class TranslateVM(QObject):
         self.problem_rows.set_cursor(-1 if row == self.problem_rows.cursor else row)
         self.editorChanged.emit()
 
+    @staticmethod
+    def _problem_key(p) -> tuple:
+        return (p.chapter, p.block, p.sha, p.kind)
+
+    @Slot(str)
+    def problemDraft(self, text: str) -> None:
+        """What is typed in the row editor now: kept per row (by its stable key) until the row is saved or gone."""
+        p = self._row_problem()
+        if p is None:
+            return
+        if text == (p.text if p.is_finding else ""):
+            self._drafts.pop(self._problem_key(p), None)
+        else:
+            self._drafts[self._problem_key(p)] = text
+
     def _row_problem(self):
         i = self.problem_rows.cursor
         return self._problems[i] if 0 <= i < len(self._problems) else None
@@ -1862,21 +1904,6 @@ class TranslateVM(QObject):
     @Slot()
     def keepProblem(self) -> None:
         self._resolve("keep", "")
-    @staticmethod
-    def _problem_key(p) -> tuple:
-        return (p.chapter, p.block, p.sha, p.kind)
-
-    @Slot(str)
-    def problemDraft(self, text: str) -> None:
-        """What is typed in the row editor now: kept per row (by its stable key) until the row is saved or gone."""
-        p = self._row_problem()
-        if p is None:
-            return
-        if text == (p.text if p.is_finding else ""):
-            self._drafts.pop(self._problem_key(p), None)
-        else:
-            self._drafts[self._problem_key(p)] = text
-
 
     @Slot(str)
     def saveProblem(self, text: str) -> None:
@@ -1888,6 +1915,7 @@ class TranslateVM(QObject):
         if p is None or not self._can_resolve(p):
             return
         path, book = self._path, self._book
+        key = self._problem_key(p)
         self.lanes.submit(lambda ctx: fchecks.resolve_problems_task(ctx, path, book, [p], action, typed),
                           on_result=lambda n: self._resolved(key),
                           on_error=lambda exc: self._not_resolved("The block could not be saved.", exc), lane="data")
@@ -1895,6 +1923,11 @@ class TranslateVM(QObject):
     def _resolved(self, key=None) -> None:
         self._drafts.pop(key, None)
         self.books.refresh_book()
+        self._load_problems()
+
+    def _not_resolved(self, plain: str, exc) -> None:
+        """A write of the Problems tab failed: the list is read again (what is shown is what is on disk) and one line says so."""
+        self.app.fail(plain, exc)
         self._load_problems()
 
     @Slot()
@@ -1916,7 +1949,6 @@ class TranslateVM(QObject):
         path, book, key = self._path, self._book, self._key()
         self._checking, self._check_pct = True, 0.0
         self._compute_bar()
-        key = self._problem_key(p)
         self.checkChanged.emit()
 
         def item(it):
@@ -1925,11 +1957,6 @@ class TranslateVM(QObject):
                 self._compute_bar()
 
         def done(_r):
-    def _not_resolved(self, plain: str, exc) -> None:
-        """A write of the Problems tab failed: the list is read again (what is shown is what is on disk) and one line says so."""
-        self.app.fail(plain, exc)
-        self._load_problems()
-
             self._checking = False
             self._compute_bar()
             self.checkChanged.emit()
