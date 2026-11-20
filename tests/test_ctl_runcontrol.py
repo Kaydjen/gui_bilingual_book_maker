@@ -412,5 +412,64 @@ class NoPollingAndClosing(Base):
         self.assertEqual(self.runs.percent(), 70)
 
 
+class RetryWaits(Base):
+    """Check findings to translate again: the marks travel with the item and the core marks them only at the real
+    start (window_spec 13.1)."""
+
+    MARKS = ((0, 1, "abc", "k1"), (1, 0, "def", "k2"))
+
+    def started_with(self, call):
+        """Run the submitted task body with `frun.run_task` replaced; returns the `retry` argument it received."""
+        seen = []
+        real = frun.run_task
+        frun.run_task = lambda ctx, handle, path, book, chapters, cfg, resume, retry, events=None: seen.append(retry)
+        try:
+            call.fn(None)
+        finally:
+            frun.run_task = real
+        return seen[0]
+
+    def test_item_keeps_the_marks_through_the_saved_queue(self):
+        it = jobqueue.Item("p", "b", ((0, 1),), retry=self.MARKS)
+        again = jobqueue.item_from(json.loads(json.dumps(it.to_dict())))
+        self.assertEqual(again, it)
+        self.assertEqual(again.retry, self.MARKS)
+        old = jobqueue.item_from({"series": "p", "book": "b", "spans": [[0, 1]]})
+        self.assertEqual(old.retry, ())
+        bad = jobqueue.item_from({"series": "p", "book": "b", "spans": [[0, 1]], "retry": [[1, 2], "x", [0, 1, 2, 3]]})
+        self.assertEqual(bad.retry, ())
+        notlist = jobqueue.item_from({"series": "p", "book": "b", "spans": [[0, 1]], "retry": "abc"})
+        self.assertEqual(notlist.retry, ())
+
+    def test_start_hands_the_marks_to_the_run(self):
+        a, astem = self.series("Alpha")
+        self.assertEqual(self.runs.start(a, astem, [0, 1], retry=self.MARKS), "")
+        self.assertEqual(self.started_with(self.starts()[0]), self.MARKS)
+
+    def test_a_queued_item_starts_with_its_marks_and_the_saved_queue_keeps_them(self):
+        a, astem = self.series("Alpha")
+        b, bstem = self.series("Beta")
+        marks = ((0, 0, "sha", "key"),)
+        self.assertEqual(self.runs.start(a, astem, [0, 1]), "")
+        self.runs.enqueue(jobqueue.Item(b, bstem, ((0, 0),), retry=marks))
+        saved = json.loads(self.app.settings.path.read_text())["win"]["queue"][0]
+        self.assertEqual(saved["retry"], [list(marks[0])])
+        self.assertEqual(len(self.starts()), 1)
+        self.end("finished")
+        self.assertEqual(self.runs.run.series, b)
+        self.assertEqual(len(self.starts()), 2)
+        self.assertEqual(self.started_with(self.starts()[1]), marks)
+        self.assertEqual(self.started_with(self.starts()[0]), ())
+
+    def test_nothing_is_marked_while_the_item_waits(self):
+        a, astem = self.series("Alpha")
+        b, bstem = self.series("Beta")
+        self.runs.start(a, astem, [0, 1])
+        before = sorted(str(p) for p in Path(b).rglob("*") if p.is_file())
+        self.runs.enqueue(jobqueue.Item(b, bstem, ((0, 0),), retry=((0, 0, "sha", "key"),)))
+        self.assertEqual(sorted(str(p) for p in Path(b).rglob("*") if p.is_file()), before)
+        self.assertEqual(len(self.starts()), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

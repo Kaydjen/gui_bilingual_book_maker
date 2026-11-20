@@ -39,7 +39,7 @@ FIELDS = {"ren": "tr", "about": "note"}
 
 def _tips() -> dict:
     return {"nolang": termtips.NO_LANGUAGE, "confirmTicked": termtips.CONFIRM_TICKED, "merge": termtips.MERGE,
-            "notATerm": termtips.NOT_A_TERM, "scanning": termtips.SCANNING, "goTranslate": "%s",
+            "notATerm": termtips.NOT_A_TERM, "scanning": termtips.SCANNING, "goTranslate": termtips.GO_TRANSLATE,
             "confirmN": termtips.confirm_tip}
 
 
@@ -318,15 +318,28 @@ class TermsVM(QObject):
     def _arranged(self, res) -> None:
         shown, cells, counts, total, confirm = res
         self.arranges += 1
+        keep = self._edit_survives(shown)
         self._shown, self._counts, self._total, self._confirm_keys = shown, counts, total, confirm
         self._sel.set_rows(r.key for r in shown)
-        self.model.set_rows(cells)
+        self.model.set_rows(cells, in_place=keep)
         self._push_selection(reader=False)
         if self._reader_key != self._cursor_key():
             self._open_reader()
         self.viewChanged.emit()
         self.listChanged.emit()
         self.floatChanged.emit()
+
+    def _edit_survives(self, shown) -> bool:
+        """A cell is being edited: the new arrangement keeps the same term in that place, so the field stays open (the cells
+        are updated in place); otherwise the edit ends, its row is another one now."""
+        if not self._edit:
+            return False
+        i = self._edit[0]
+        if len(shown) == len(self._shown) and 0 <= i < len(shown) and shown[i].key == self._shown[i].key:
+            return True
+        self._edit = None
+        self.editChanged.emit()
+        return False
 
     def _push_selection(self, reader: bool = True) -> None:
         cur = self._sel.cursor_index

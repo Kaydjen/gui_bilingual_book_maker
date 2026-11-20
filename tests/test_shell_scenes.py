@@ -152,7 +152,10 @@ class Scenes(unittest.TestCase):
 
     # ------------------------------------------------------------ header
     def test_header_states(self):
-        quiet = self.run_all("ShellScene", {"library": "ready", "screen": "books"}, tag="hdrquiet")
+        # settled = the chapters are loaded: while they load the skeleton runs its one ambient animation (under load that is
+        # still the case at the time of the shot)
+        settled = [{"op": "until", "name": "chapterSkeleton", "prop": "visible", "value": False}, {"op": "wait", "ms": 100}]
+        quiet = self.run_all("ShellScene", {"library": "ready", "screen": "books"}, settled, tag="hdrquiet")
         for r in quiet:
             self.assertEqual([r.item("step_%s" % s)["kind"] for s in ("books", "terms", "translate", "export")], [""] * 4)
             self.assertEqual(r.ambient, 0)

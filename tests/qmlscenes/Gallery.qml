@@ -172,7 +172,7 @@ AppRoot {
         y: 610
         width: 120
         height: 30
-        Pill { id: opener; text: "Opener ▾"; objectName: "opener" }
+        Pill { id: opener; text: "Opener ▾"; objectName: "opener"; onClicked: dd.openUnder(opener) }
     }
 
     // ---- overlays (one at a time)
@@ -212,6 +212,15 @@ AppRoot {
         Field { objectName: "panelField"; y: 70; width: parent.width; value: "Book 2"
             validate: t => t.length > 0 && t.length < 10; invalidTip: "1 to 9 characters"
             onCommitted: t => rec.record("fieldCommitted", t) }
+        Column {
+            y: 110
+            width: parent.width
+            visible: fake.tall === true
+            Repeater {
+                model: fake.tall === true ? 30 : 0
+                AppText { required property int index; text: "Line " + (index + 1); color: Theme.dim }
+            }
+        }
     }
     Item { objectName: "liveProbe"; visible: false; property bool live: Visual.live }
     Toast {

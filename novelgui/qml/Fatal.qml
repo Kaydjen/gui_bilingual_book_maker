@@ -45,11 +45,13 @@ Window {
         Pill {
             objectName: "copyButton"
             text: "Copy details"
+            kind: "flat"
             onClicked: fatal.copyDetails()
         }
         Pill {
             objectName: "logButton"
             text: "Open log"
+            kind: "flat"
             onClicked: fatal.openLog()
         }
         Pill {

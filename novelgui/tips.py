@@ -353,7 +353,7 @@ TR_PER = {1: "One paragraph per request: the slowest, the most requests.",
           5: "About 1000 characters, 10 paragraphs at most. No loss of quality was measured against 1.",
           10: "About 2000 characters, 20 paragraphs at most. Not yet compared with 1 and 5 for quality."}
 TR_KEYS_HEAD = "Your Google API keys. Click: Settings at the keys."
-TR_LEFT = "All keys together: %s, 500 requests a day each."
+TR_LEFT = "An estimate for this PC. All keys together: %s, 500 requests a day each; requests made from another PC are not counted."
 TR_TAB = {"chapters": "The chapters of the selection.", "problems": "Blocks that failed or that a check flagged.",
           "queue": "Jobs that wait for their turn.", "sample": "The sample of the first chapter."}
 TR_TAB_RED = "%d blocks failed: they are left out of export until fixed."

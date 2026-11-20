@@ -54,10 +54,10 @@ FocusScope {
         MouseArea {
             anchors.fill: parent
             acceptedButtons: Qt.AllButtons
-            onPressed: {
-                card.forceActiveFocus()         // the field loses focus and commits
+            onPressed: card.forceActiveFocus()          // the field loses focus and commits
+            onReleased: {
                 if (!panel.sticky)
-                    panel.close()
+                    panel.close()               // closed on the release: a hidden veil would hand it to what lies under it
             }
         }
     }
@@ -95,6 +95,7 @@ FocusScope {
             }
             Flickable {
                 id: body
+                objectName: card.objectName + "Body"
                 y: head.height
                 width: parent.width
                 height: Math.min(inner.childrenRect.height, parent.height - head.height - 16 - foot.height)

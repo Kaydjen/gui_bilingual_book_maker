@@ -252,7 +252,7 @@ class TwoKeys(Base):
     def test_the_daily_total_follows_the_keys(self):
         pop = self.vm.time["pop"]
         self.assertEqual((pop["keysText"], pop["leftText"]), ("API keys · 2", "1 000 / 1 000"))
-        self.assertEqual(pop["leftTip"], "All keys together: 2 keys, 500 requests a day each.")
+        self.assertEqual(pop["leftTip"], "An estimate for this PC. All keys together: 2 keys, 500 requests a day each; requests made from another PC are not counted.")
 
 
 class NoKeys(Base):

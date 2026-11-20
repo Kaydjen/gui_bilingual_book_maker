@@ -48,7 +48,7 @@ FocusScope {
     MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.AllButtons
-        onPressed: floating.close()
+        onReleased: floating.close()            // not on the press: a hidden catcher would hand the release to the opener under it
     }
     Surface {
         id: cardSurface

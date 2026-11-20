@@ -6,6 +6,8 @@ Every scenario runs in a child process (`python -m tests.qmlharness ...`) becaus
 application exists and because a crash of one scene must not take the test run with it. Nothing is shown on the desktop:
 QT_QPA_PLATFORM=offscreen. Shots go to NOVELGUI_SHOTS (default: the temp dir), never into the repository.
 
+Action `until` ({"op": "until", "name", "prop", "value", "ms"}) waits for a property of a named item to take a value.
+
 Scene contract: the scene is a QML file whose root is an Item; it sees `fake` (the dict given as `data`) and `rec`
 (`rec.record(name, value)` stores an event the test can read back in `Result.events`).
 """
@@ -356,6 +358,12 @@ def _child(req: dict) -> int:
         op = a["op"]
         if op == "wait":
             spin(a["ms"])
+        elif op == "until":
+            # wait for a real condition instead of a time: the item's property equals the value (or `ms` pass, default 8 s;
+            # the test then asserts what it needs and fails on its own terms)
+            end = time.perf_counter() + a.get("ms", 8000) / 1000.0
+            while time.perf_counter() < end and find(a["name"]).property(a["prop"]) != a["value"]:
+                spin(30)
         elif op == "click":
             QTest.mouseClick(view, Qt.RightButton if a.get("button") == "right" else Qt.LeftButton, mods[a.get("mod", "")],
                              center(a["name"]))

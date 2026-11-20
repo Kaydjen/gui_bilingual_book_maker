@@ -72,6 +72,18 @@ class TooltipTexts(unittest.TestCase):
         self.assertEqual(bad, [])
 
 
+    def test_the_terms_view_model_builds_its_tooltips_only_from_termtips(self):
+        """TermsVM._tips() holds no literal text: every value is an attribute of termtips (a template or a function)."""
+        import ast
+        tree = ast.parse((PKG / "vm" / "termsvm.py").read_text(encoding="utf-8"))
+        fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_tips")
+        values = [v for n in ast.walk(fn) if isinstance(n, ast.Dict) for v in n.values]
+        self.assertGreater(len(values), 5)
+        for v in values:
+            self.assertIsInstance(v, ast.Attribute, ast.dump(v))
+            self.assertEqual(v.value.id, "termtips")
+
+
 class QtFreeLayers(unittest.TestCase):
     def test_controllers_facade_and_pure_modules_import_no_qt(self):
         bad = []

@@ -43,8 +43,15 @@ class TermModel(QAbstractListModel):
         return self._rows[r][k] if 0 <= k < len(ROLE_NAMES) else None
 
     # ---------------------------------------------------------- filling
-    def set_rows(self, rows) -> None:
-        """A new arrangement: ticks and cursor start empty (the view-model sets them right after)."""
+    def set_rows(self, rows, in_place: bool = False) -> None:
+        """A new arrangement: ticks and cursor start empty (the view-model sets them right after). `in_place`: the same rows
+        in the same places (the caller knows), so only the cells that differ are announced and no delegate is rebuilt: a cell
+        being edited keeps its focus and its text."""
+        if in_place and len(rows) == len(self._rows):
+            old, self._rows = self._rows, rows
+            for a, b in ranges(i for i, (x, y) in enumerate(zip(rows, old)) if x != y):
+                self.dataChanged.emit(self.index(a), self.index(b))
+            return
         self.beginResetModel()
         self._rows = rows
         self._ticked = set()
