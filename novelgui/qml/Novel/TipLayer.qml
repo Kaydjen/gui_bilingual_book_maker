@@ -26,6 +26,7 @@ Item {
         visible: Tips.shown
         text: Tips.text
         facts: Tips.facts
+        onCard: Theme.onPanel(Tips.owner)
         readonly property point from: tipLayer.mapFromItem(null, Tips.at.x, Tips.at.y)
         x: tipLayer.clamp(from.x + 14, 4, tipLayer.width - width - 4)
         y: from.y + 22 + height > tipLayer.height - 4 ? Math.max(4, from.y - height - 10) : from.y + 22

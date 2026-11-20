@@ -7,9 +7,10 @@ Surface {
 
     property string text: ""
     property var facts: []
+    property bool onCard: false
     readonly property real maxWidth: 300
 
-    color: Theme.menu
+    color: onCard ? Theme.menuOnPanel : Theme.menu
     radius: Theme.rControl
     level: 2
     width: Math.max(Math.min(maxWidth - 20, ruler.implicitWidth), factsBox.visible ? factsBox.implicitWidth : 0) + 20

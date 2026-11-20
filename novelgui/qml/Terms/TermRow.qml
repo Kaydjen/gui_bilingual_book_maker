@@ -80,6 +80,7 @@ RowBase {
             sourceComponent: ChipCell {
                 objectName: "termChips_" + row.rowIndex
                 values: row.ren.split("")
+                raised: row.selected || row.current
                 terms: row.terms
                 rowIndex: row.rowIndex
                 field: "ren"
@@ -189,6 +190,7 @@ RowBase {
             sourceComponent: ChipCell {
                 objectName: "genderChips_" + row.rowIndex
                 values: row.gen.split("")
+                raised: row.selected || row.current
                 terms: row.terms
                 rowIndex: row.rowIndex
                 field: "gender"

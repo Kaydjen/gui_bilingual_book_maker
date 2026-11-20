@@ -56,7 +56,7 @@ FocusScope {
             required property int index
             translate: tab.translate
             rowIndex: item.index
-            picked: item.index === tab.cursor
+            picked: Focus.byKey && item.index === tab.cursor      // lifted only while the keys move it, not after a click
         }
         Component.onCompleted: {
             list.objectName = "trChapterList"
@@ -79,6 +79,7 @@ FocusScope {
     Connections {
         target: tab.translate.chapters
         function onModelReset() {
+            tab.cursor = -1                 // the cursor is a row number: after a reload it would sit on another chapter
             Qt.callLater(tab.toCurrent)
         }
     }

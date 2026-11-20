@@ -33,8 +33,7 @@ FocusScope {
         height: msg.height + 16 + Theme.pillHeight + 32
         level: 3
         radius: 12
-        color: Theme.panel
-        property bool panelSurface: true
+        color: Theme.lift2
 
         AppText {
             id: msg
@@ -48,6 +47,7 @@ FocusScope {
         }
         Pill {
             objectName: "toastButton"
+            onLift: true
             anchors.right: parent.right
             anchors.rightMargin: 20
             anchors.bottom: parent.bottom

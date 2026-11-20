@@ -64,7 +64,7 @@ Floating {
             visible: dd.filtering
             width: parent.width
             height: 28
-            edge: filterField.activeFocus ? Theme.fieldFocus : "#222222"
+            edge: filterField.activeFocus ? Theme.fieldFocus : Theme.s3
             AppText {
                 visible: filterField.text === ""
                 x: 8
@@ -141,7 +141,7 @@ Floating {
                     visible: !item.group && !item.off && (hover.hovered || dd.hot === item.index)
                     anchors.fill: parent
                     radius: Theme.rRow
-                    color: Theme.lift2
+                    color: dd.onCard ? Theme.hotOnPanel : Theme.lift2
                 }
                 Rectangle {
                     visible: item.cur

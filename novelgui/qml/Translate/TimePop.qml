@@ -51,6 +51,7 @@ Floating {
                     color: Theme.lift2
                 }
                 Rectangle {
+                    objectName: "timeRing" + opt.index
                     x: 9
                     anchors.verticalCenter: parent.verticalCenter
                     width: 12
@@ -58,7 +59,7 @@ Floating {
                     radius: 6
                     color: "transparent"
                     border.width: opt.modelData.selected ? 4 : 1
-                    border.color: opt.modelData.selected ? (pop.locked ? Theme.dim : Theme.bright) : Theme.s4
+                    border.color: opt.modelData.selected ? (pop.locked ? Theme.dim : Theme.bright) : Theme.dim
                 }
                 AppText {
                     id: optLabel

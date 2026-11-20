@@ -11,6 +11,7 @@ Item {
     readonly property bool off: kind === "off"
     readonly property bool hovered: hover.hovered
     readonly property bool onCard: Theme.onPanel(pill)
+    property bool onLift: false             // on the lifted message card (#262626): one more step
     readonly property color textColor: {
         if (kind === "off")
             return Theme.faint
@@ -27,6 +28,7 @@ Item {
     activeFocusOnTab: !off
 
     Surface {
+        objectName: pill.objectName !== "" ? pill.objectName + "Fill" : ""
         anchors.fill: parent
         level: pill.kind === "flat" || pill.off ? 0 : 1
         radius: Theme.rControl
@@ -34,7 +36,9 @@ Item {
             if (pill.off)
                 return Theme.pillOff
             if (pill.kind === "flat")
-                return pill.hovered ? Theme.menu : "transparent"
+                return pill.hovered ? (pill.onCard ? Theme.pillOnPanel : Theme.menu) : "transparent"
+            if (pill.onLift)
+                return pill.hovered ? Theme.pillOnLiftHover : Theme.pillOnLift
             return Theme.pillFill(pill.onCard, pill.hovered)
         }
     }

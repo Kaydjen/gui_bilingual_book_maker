@@ -12,6 +12,7 @@ FocusScope {
     property alias card: cardSurface
     default property alias content: inner.data
     property real contentHeight: inner.childrenRect.height
+    readonly property bool onCard: Theme.onPanel(floating)       // opened over a panel card
     property real cardX: 0
     property real cardY: 0
     signal closed()
@@ -59,7 +60,7 @@ FocusScope {
         height: Math.min(floating.maxCardHeight, floating.contentHeight + 10)
         level: 2
         radius: Theme.rMenu
-        color: Theme.menu
+        color: floating.onCard ? Theme.menuOnPanel : Theme.menu
         opacity: floating.visible ? 1 : 0
         transform: Translate { y: floating.visible ? 0 : -4 }
         Behavior on opacity { NumberAnimation { duration: Theme.durPop } }

@@ -43,7 +43,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         width: line.width * 0.34 - 12
         height: 28
-        edge: boxHover.hovered ? Theme.fieldFocus : Theme.fieldLine
+        edge: boxHover.hovered ? Theme.fieldFocus : Theme.s4
         AppText {
             objectName: "addSeriesText" + line.rowIndex
             x: 10

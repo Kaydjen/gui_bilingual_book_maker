@@ -70,7 +70,7 @@ Floating {
                     visible: !row.divider && !row.off && (rowHover.hovered || menu.hot === row.index)
                     anchors.fill: parent
                     radius: Theme.rRow
-                    color: Theme.lift2
+                    color: menu.onCard ? Theme.hotOnPanel : Theme.lift2
                 }
                 Rectangle {
                     visible: row.it.kind === "check"

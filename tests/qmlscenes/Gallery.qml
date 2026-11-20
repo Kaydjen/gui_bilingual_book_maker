@@ -228,6 +228,7 @@ AppRoot {
         objectName: "toast"
     }
     Component.onCompleted: Qt.callLater(function () {
+        Focus.byKey = fake.byKey === true
         if (overlay === "dropdown") dd.openUnder(opener)
         else if (overlay === "menu") menu.openAt(700, 540)
         else if (overlay === "panel") panel.open()

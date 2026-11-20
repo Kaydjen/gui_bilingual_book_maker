@@ -171,9 +171,11 @@ class GalleryChecklist(Base):
         self.check("row height 30 (header 30, list top margin 2)", 242, ly, 0)
         self.check("pane #0a0a0a", PANE, r.pixel(x, ly + 15), 3)
         self.check("selected row #1a1a1a", ROW_SEL, r.pixel(x, ly + 45), 3)
-        self.check("current row lifted #1c1c1c", LIFT, r.pixel(x, ly + 75), 3)
+        self.assertLess(r.pixel(x, ly + 59)[0], 20, "the cursor row is not lifted while no key moved it (only selected)")
+        rk = qh.scenario("Gallery", data={"byKey": True}, tag="tablekey")
+        self.check("current row lifted #1c1c1c (the keys moved the cursor)", LIFT, rk.pixel(x, ly + 75), 3)
         self.check("current row one pixel up (first lifted pixel row)", ly + 59, next(
-            y for y in range(int(ly) + 50, int(ly) + 70) if r.pixel(x, y)[0] >= 27), 1)
+            y for y in range(int(ly) + 50, int(ly) + 70) if rk.pixel(x, y)[0] >= 27), 1)
         self.check("selected row radius 6", arc_inset(6, 1.5), self.row_edge(r, ly + 31.5, ROW_SEL), 1.5)
         self.check("column splitters: header cells line up with row cells", r.item("headCell_title")["x"], 24 + 6 + 8 + 60, 1)
         self.check("state column is right aligned to the row edge", 24 + 560 - 6 - 8 - 8, r.item("headCell_state")["x"] + r.item("headCell_state")["w"] - 8, 12)
@@ -361,9 +363,9 @@ class Overlays(Base):
     def test_toast(self):
         r = qh.scenario("Gallery", data={"overlay": "toast", "bare": True}, tag="toast")
         c = r.item("toastCard")
-        self.check("toast fill #171717", PANEL, r.pixel(c["x"] + 6, c["y"] + c["h"] / 2), 3)
+        self.check("toast fill #262626 (lifted, so it reads over a panel)", (38, 38, 38), r.pixel(c["x"] + 6, c["y"] + c["h"] / 2), 3)
         self.check("toast min width 300", 300, c["w"], 0)
-        self.check("toast radius 12", arc_inset(12), self.edge(r, "toastCard", PANEL), 1.5)
+        self.check("toast radius 12", arc_inset(12), self.edge(r, "toastCard", (38, 38, 38)), 1.5)
         r = qh.scenario("Gallery", data={"overlay": "toast"}, tag="toastok", actions=[{"op": "click", "name": "toastButton"}, {"op": "wait", "ms": 100}])
         self.assertFalse(r.item("toast")["visible"])
 

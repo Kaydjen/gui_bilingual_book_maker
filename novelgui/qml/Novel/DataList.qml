@@ -157,7 +157,7 @@ FocusScope {
             required property var model
             rowIndex: index
             selected: model.selected === true
-            current: model.current === true
+            current: Focus.byKey && model.current === true      // lifted only while the keys move the cursor
             Repeater {
                 model: table.columnSet.columns
                 delegate: Cell {

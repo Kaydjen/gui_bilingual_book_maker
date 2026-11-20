@@ -12,6 +12,7 @@ FocusScope {
     property var app: null
     property var vm: null
     property bool addingKey: false
+    property bool panelSurface: true
     property bool editingPace: false
     readonly property real innerWidth: card.width - 44
 

@@ -13,6 +13,7 @@ FocusScope {
     property string actionKind: "main"
     property bool actionEnabled: true
     property bool sticky: false
+    property bool panelSurface: true        // a menu or a list opened over the panel is a card on a card
     property real panelWidth: 440
     property real margin: 20
     default property alias content: inner.data

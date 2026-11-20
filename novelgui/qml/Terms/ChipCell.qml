@@ -11,6 +11,7 @@ Row {
     property var terms: null
     property int rowIndex: -1
     property string field: "ren"
+    property bool raised: false          // the row is ticked or current: its own fill is the chip's, so the chip is one step lighter
     signal typeAnother()
 
     spacing: 2
@@ -36,7 +37,7 @@ Row {
                 height: 22
                 level: 1
                 radius: 5
-                color: chipHover.hovered ? Theme.lift2 : Theme.lift
+                color: chips.raised ? (chipHover.hovered ? Theme.hotOnPanel : Theme.lift2) : (chipHover.hovered ? Theme.lift2 : Theme.lift)
 
                 AppText {
                     id: label
