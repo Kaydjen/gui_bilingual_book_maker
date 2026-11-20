@@ -1,4 +1,4 @@
-import json, unittest
+import json, os, unittest
 from bbm_gui.glossary import *
 
 class T(unittest.TestCase):
@@ -52,7 +52,10 @@ class T(unittest.TestCase):
         self.assertEqual(check_system("a {x} {language}"), ["braces"])
         self.assertEqual(build_system("T", []), "T")
     def test_roundtrip_his_prompt(self):
-        c = json.load(open(r"D:\_\prd\run\bilingual_book_maker\custom_prompt.json", encoding="utf-8"))
+        path = r"D:\_\prd\run\bilingual_book_maker\custom_prompt.json"
+        if not os.path.exists(path):
+            self.skipTest("the real prompt file is not on this PC")
+        c = json.load(open(path, encoding="utf-8"))
         s = c["system"]; at = s.index("\n- ", s.index("ГЛОССАРИЙ")) + 1; head = s[:at]
         ents = from_text(s[at:])
         self.assertEqual(build_system(head, ents), s)  # identical layout to convert_glossary.py
