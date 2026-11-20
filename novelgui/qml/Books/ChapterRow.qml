@@ -47,6 +47,7 @@ RowBase {
         elide: Text.ElideRight
         text: row.title
         color: row.toc ? Theme.faint : (row.selected || row.current ? Theme.bright : Theme.text)
+        TruncTip {}
     }
     Item {
         width: row.columns.widthOf("state")

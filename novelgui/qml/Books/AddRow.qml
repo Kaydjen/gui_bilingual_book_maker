@@ -34,6 +34,7 @@ Item {
         elide: Text.ElideMiddle
         text: line.file
         color: line.usable ? Theme.text : Theme.faint
+        TruncTip {}
     }
     Inset {
         id: box
@@ -72,7 +73,8 @@ Item {
         height: parent.height
         elide: Text.ElideRight
         text: line.usable ? line.label : line.note
-        color: line.usable ? Theme.dim : Theme.dim
+        color: Theme.dim
+        TruncTip {}
     }
     AppText {
         objectName: "addLeave" + line.rowIndex

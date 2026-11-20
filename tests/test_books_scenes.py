@@ -395,7 +395,7 @@ class Scenes(unittest.TestCase):
             self.assertEqual(r.item("readerTabText")["text"], "Reader · 2653")
             self.assertEqual(r.item("readerTitle")["text"], "Chapter 2653 - Lyonesse")
             self.assertEqual(r.item("readerPairs")["count"], 4)
-            self.assertTrue(r.item("readerTarget")["text"].startswith("Translated:"))
+            self.assertTrue(r.item("readerTarget")["plain"].startswith("Translated:"))
             self.assertEqual(r.item("readerVersion")["text"], "r1 ▾")
             self.assertEqual(r.item("step_translate")["kind"], "")
             self.one_red(r)
@@ -404,7 +404,7 @@ class Scenes(unittest.TestCase):
     def test_reader_of_an_untranslated_chapter_shows_dashes_and_closes(self):
         acts = [WAIT, {"op": "py", "name": "read", "args": [90]}, {"op": "wait", "ms": 1200}]
         for r in self.go("readerempty", lib(knights(), *others()), acts):
-            self.assertEqual(r.item("readerTarget")["text"], "—")
+            self.assertEqual(r.item("readerTarget")["plain"], "—")
         acts = acts + [{"op": "click", "name": "readerClose"}, {"op": "wait", "ms": 300}]
         for r in self.go("readerclosed", lib(knights(), *others()), acts):
             self.assertFalse(r.item("readerScreen")["visible"])

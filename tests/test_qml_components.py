@@ -171,7 +171,7 @@ class GalleryChecklist(Base):
         self.check("row height 30 (header 30, list top margin 2)", 242, ly, 0)
         self.check("pane #0a0a0a", PANE, r.pixel(x, ly + 15), 3)
         self.check("selected row #1a1a1a", ROW_SEL, r.pixel(x, ly + 45), 3)
-        self.assertLess(r.pixel(x, ly + 59)[0], 20, "the cursor row is not lifted while no key moved it (only selected)")
+        self.check("the cursor row is not lifted while no key moved it (only selected #1a1a1a)", ROW_SEL, r.pixel(x, ly + 75), 1)
         rk = qh.scenario("Gallery", data={"byKey": True}, tag="tablekey")
         self.check("current row lifted #1c1c1c (the keys moved the cursor)", LIFT, rk.pixel(x, ly + 75), 3)
         self.check("current row one pixel up (first lifted pixel row)", ly + 59, next(

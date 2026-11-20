@@ -58,6 +58,7 @@ Floating {
                     height: 28
                     elide: Text.ElideRight
                     text: item.modelData.text
+                    TruncTip {}
                     color: item.fresh ? (itemHover.hovered ? Theme.bright : Theme.dim)
                            : (item.modelData.current === true || itemHover.hovered ? Theme.bright : Theme.text)
                 }

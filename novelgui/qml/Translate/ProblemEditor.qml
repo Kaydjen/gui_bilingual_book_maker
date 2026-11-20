@@ -15,8 +15,17 @@ Item {
 
     implicitHeight: 134
 
-    onKeyChanged: edit.text = info.text || ""
-    Component.onCompleted: edit.text = info.text || ""
+    property bool loading: false
+
+    // the row picked: its own text (what was typed there before, or the translation); a reload of the list that keeps the row
+    // keeps the key and so the text being typed
+    function load() {
+        loading = true
+        edit.text = info.text || ""
+        loading = false
+    }
+    onKeyChanged: load()
+    Component.onCompleted: load()
 
     Rectangle {
         objectName: "problemSourceBox"
@@ -34,19 +43,16 @@ Item {
         Flickable {
             anchors.fill: parent
             anchors.margins: 8
-            contentHeight: sourceText.implicitHeight
+            contentHeight: sourceText.height
             clip: true
             interactive: contentHeight > height
             boundsBehavior: Flickable.StopAtBounds
-            AppText {
+            ReadText {
                 id: sourceText
                 objectName: "problemSourceText"
                 width: parent.width
-                height: implicitHeight
-                verticalAlignment: Text.AlignTop
-                wrapMode: Text.Wrap
-                lineHeight: 1.25
-                text: ed.info.source || ""
+                leading: 1.25
+                plain: ed.info.source || ""
                 color: Theme.text
             }
         }
@@ -89,6 +95,7 @@ Item {
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontSize
                 selectByMouse: true
+                onTextChanged: if (!ed.loading && ed.key >= 0) ed.translate.problemDraft(text)       // kept per row by the view-model
                 onCursorRectangleChanged: {
                     if (cursorRectangle.y < flick.contentY)
                         flick.contentY = cursorRectangle.y

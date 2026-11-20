@@ -301,7 +301,7 @@ class Scenes(unittest.TestCase):
     def test_a_problem_opens_the_row_editor(self):
         for r in self.go("problem1"):
             self.assertTrue(r.item("trEditor")["visible"])
-            self.assertEqual(r.item("problemSourceText")["text"], "Paragraph 1 of chapter 50, with a few words to translate.")
+            self.assertEqual(r.item("problemSourceText")["plain"], "Paragraph 1 of chapter 50, with a few words to translate.")
             self.assertEqual(r.item("problemEdit")["text"], "", "a failed block has no translation yet")
             self.assertEqual(r.item("problemRetry")["text"], "Retry")
             self.assertEqual(r.item("problemKeep")["text"], "Keep original")
@@ -380,7 +380,7 @@ class Scenes(unittest.TestCase):
             self.assertEqual(r.item("sampleSub")["text"], "chapter 2703 · first 50 blocks")
             self.assertEqual(r.item("sampleSource1")["color"], DIM)
             self.assertEqual(r.item("sampleTarget1")["color"], BRIGHT)
-            self.assertEqual(r.item("sampleTarget1")["text"], ts.SAMPLE[1])
+            self.assertEqual(r.item("sampleTarget1")["plain"], ts.SAMPLE[1])
             self.assertEqual(r.item("trSampleValue")["text"], "Sample · 1 unreviewed")
             self.assertEqual(r.ambient, 0)
         self.narrow("sample")

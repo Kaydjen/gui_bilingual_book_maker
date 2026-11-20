@@ -45,6 +45,7 @@ RowBase {
             elide: Text.ElideRight
             text: row.title
             color: row.beyond ? Theme.faint : (row.current || row.picked ? Theme.bright : Theme.text)
+            TruncTip {}
         }
         AppText {
             id: wordText

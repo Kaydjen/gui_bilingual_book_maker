@@ -48,6 +48,7 @@ RowBase {
             text: row.text
             color: row.isBook ? (row.mode === "selected" ? Theme.bright : Theme.dim)
                               : (row.mode === "selected" || row.mode === "parent" ? Theme.bright : Theme.text)
+            TruncTip {}
         }
         AppText {
             visible: !row.editing && row.count > 0

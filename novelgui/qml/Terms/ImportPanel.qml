@@ -78,6 +78,7 @@ Panel {
                             elide: Text.ElideMiddle
                             text: file.modelData.name
                             color: Theme.bright
+                            TruncTip {}
                         }
                         AppText {
                             anchors.right: parent.right

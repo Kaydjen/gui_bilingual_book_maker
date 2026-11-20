@@ -56,6 +56,7 @@ RowBase {
         elide: Text.ElideRight
         text: row.src
         color: row.selected || row.current ? Theme.bright : Theme.text
+        TruncTip {}
     }
     Item {
         id: renCell
@@ -72,6 +73,7 @@ RowBase {
             elide: Text.ElideRight
             text: row.nolang ? "—" : row.ren
             color: row.nolang ? Theme.faint : Theme.bright
+            TruncTip {}
         }
         Loader {
             active: row.renChoice && !row.editRen && !row.nolang
@@ -285,10 +287,19 @@ RowBase {
             elide: Text.ElideRight
             text: row.about === "" ? "—" : row.about
             color: row.about === "" ? Theme.faint : Theme.dim
+            TruncTip {}
         }
         MouseArea {
+            // a press is the row's own (cursor, list focus, drag), the double click edits
+            id: aboutMouse
             anchors.fill: parent
             enabled: !row.editAbout
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onPressed: event => row.pressRow(event.button, event.modifiers)
+            onPositionChanged: event => {
+                if (pressed)
+                    row.dragRow(aboutMouse, event.x, event.y)
+            }
             onDoubleClicked: row.terms.beginEdit(row.rowIndex, "about")
         }
         Loader {
