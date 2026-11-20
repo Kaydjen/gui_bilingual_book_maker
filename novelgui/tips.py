@@ -308,6 +308,7 @@ CHAPTER_STATE = ("How much of the chapter is translated.", [("Full line", "every
 NEXT_STEP = ("The next step for this selection. It only opens the step; nothing starts.", [])
 MOVE_OFF = "Only a book with nothing translated can move: the glossary and the language belong to its series."
 UPDATE_FILE_OFF = "Comes with a later program change."
+TR_SAMPLE_NEXT = "Translate the next 50 paragraphs of this chapter"
 READ_OFF = "Nothing of this chapter is translated yet."
 RENAME_TAKEN = "Another series already has this name."
 UNDO = "Brings it back from the program's trash, with its books, translations and glossary."

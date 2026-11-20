@@ -79,6 +79,14 @@ class KeyStore:
             self.save()
         return len(new)
 
+    def restore(self, key: str, index: int) -> bool:
+        """Put a removed key back where it was (the Undo of a removal)."""
+        if key in self.keys:
+            return False
+        self.keys.insert(max(0, min(index, len(self.keys))), key)
+        self.save()
+        return True
+
     def remove(self, key: str) -> None:
         if key in self.keys:
             self.keys.remove(key)

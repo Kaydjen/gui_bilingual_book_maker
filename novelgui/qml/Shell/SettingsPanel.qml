@@ -370,6 +370,17 @@ FocusScope {
                 }
             }
         }
+        Message {
+            id: keyUndo
+            objectName: "keyUndo"
+            visible: panel.vm.removedKey !== ""
+            z: 4
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: parent.height - height - 14
+            fact: [{ text: "Deleted ", kind: "" }, { text: panel.vm.removedKey, kind: "n" }]
+            verbs: [{ text: "Undo", kind: "main", id: "undo" }]
+            onVerbActivated: panel.vm.undoRemoveKey()
+        }
         AppText {
             objectName: "savedLine"
             x: 44

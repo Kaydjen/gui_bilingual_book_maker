@@ -72,9 +72,10 @@ class ReaderModel(QAbstractListModel):
 class ReaderVM(QObject):
     changed = Signal()
 
-    def __init__(self, lanes, parent=None):
+    def __init__(self, lanes, log=None, parent=None):
         super().__init__(parent)
         self.lanes = lanes
+        self.log = log
         self.model = ReaderModel(self)
         self._open = False
         self._loading = False
@@ -122,12 +123,14 @@ class ReaderVM(QObject):
     @Slot(str, str, int)
     def openChapter(self, series_path: str, book: str, index: int) -> None:
         self._open, self._loading, self._error = True, True, ""
+        self._ask = getattr(self, "_ask", 0) + 1
+        ask = self._ask
         self._number = index + 1
         self._where = "%s · %s" % (Path(series_path).name, book)
         self.model.set_rows([])
         self.changed.emit()
         self.lanes.submit(lambda ctx: pairs_task(ctx, series_path, book, index), on_result=self._done,
-                          on_error=self._failed, lane="read", group="reader")
+                          on_error=lambda exc: self._failed(exc, ask), lane="read", group="reader")
 
     def _done(self, res) -> None:
         self._loading = False
@@ -135,9 +138,13 @@ class ReaderVM(QObject):
         self.model.set_rows(res["pairs"])
         self.changed.emit()
 
-    def _failed(self, exc) -> None:
+    def _failed(self, exc, ask=None) -> None:
+        if self.log is not None:
+            self.log.add("A chapter could not be read for the reader: %s" % exc, problem=ask is None or ask == getattr(self, "_ask", 0))
+        if ask is not None and (ask != getattr(self, "_ask", 0) or not self._open):
+            return                                  # the reader was closed or opened on another chapter meanwhile
         self._loading = False
-        self._error = "This chapter cannot be read: %s." % exc
+        self._error = "This chapter cannot be read."
         self.changed.emit()
 
     @Slot()

@@ -52,7 +52,7 @@ class BooksSession:
         self.want = Want()
         self.scanning = False
         self.changed = Observers()      # fn(kind, payload): "series" | "skeleton" | "rows" (ranges) | "scanned"
-        self.failed = Observers()       # fn(kind, error)
+        self.failed = Observers()       # fn(kind, error, key): the key of the request that failed (library path | (series, book))
         self._token = None
 
     def load_library(self, library, on_done=None) -> None:
@@ -65,14 +65,15 @@ class BooksSession:
             if on_done is not None:
                 on_done(views)
         self.submit(lambda ctx, lib=self.library: library_task(ctx, lib), on_result=done,
-                    on_error=lambda exc: self.failed.notify("library", exc), lane="data", group="library")
+                    on_error=lambda exc, lib=self.library: self.failed.notify("library", exc, lib), lane="data", group="library")
 
     def open_book(self, series_path, book: str) -> None:
         self.series_path, self.book = str(series_path), book
         self.infos = []
         self.scanning = True
         on_item, on_result = self._on_item, self._on_done
-        on_error = self._on_error
+        key = (self.series_path, book)
+        on_error = lambda exc: self._on_error(exc, key)         # noqa: E731
         if self.crunch is not None:
             a, b = self.want.get()
             self._token = self.crunch.submit("scan_book", {"series_path": self.series_path, "book": book,
@@ -119,9 +120,10 @@ class BooksSession:
         self.scanning = False
         self.changed.notify("scanned", res)
 
-    def _on_error(self, exc) -> None:
-        self.scanning = False
-        self.failed.notify("scan", exc)
+    def _on_error(self, exc, key=None) -> None:
+        if key is None or key == (self.series_path, self.book):
+            self.scanning = False
+        self.failed.notify("scan", exc, key)
 
     def view(self) -> tuple:
         """(series path, book, chapter infos): what RunControl reads of the screen."""

@@ -15,6 +15,7 @@ from ..ctl import settingsrules as sr
 from ..runtime import markers, paths
 
 SAVED_MS = 3000
+UNDO_MS = 9000                   # how long a removed key can come back
 
 
 class KeyModel(QAbstractListModel):
@@ -81,6 +82,7 @@ class SettingsVM(QObject):
     graphicsChanged = Signal()
     googleChanged = Signal()
     glow = Signal(str)
+    removedChanged = Signal()
 
     def __init__(self, app, keystore_, lanes, local_dir=None, parent=None):
         super().__init__(parent)
@@ -106,6 +108,11 @@ class SettingsVM(QObject):
         self._timer.setSingleShot(True)
         self._timer.setInterval(SAVED_MS)
         self._timer.timeout.connect(self._clear_saved)
+        self._removed = None                    # (index, key text): in memory only, until the undo line ends; never logged
+        self._undo_timer = QTimer(self)
+        self._undo_timer.setSingleShot(True)
+        self._undo_timer.setInterval(UNDO_MS)
+        self._undo_timer.timeout.connect(self._forget_removed)
         app.libraryChanged.connect(self.libraryChanged)
         app.runChanged.connect(self.libraryChanged)
         self.rebuild()
@@ -177,6 +184,7 @@ class SettingsVM(QObject):
         before = list(self.keystore.keys)
         n = self.keystore.add(text)
         if not n:
+            self._say(sr.ALREADY if keystore.parse_keys(text) else sr.NO_KEY)
             return 0
         new = [k for k in self.keystore.keys if k not in before]
         self.app.log.add("%d %s added" % (n, "key" if n == 1 else "keys"))
@@ -212,9 +220,35 @@ class SettingsVM(QObject):
             key = self.keystore.keys[index]
             self.keystore.remove(key)
             self._checked.pop(key, None)
+            self._removed = (index, key)
+            self._undo_timer.start()
             self.app.log.add("A key was removed")
             self.rebuild()
             self._ok("keys")
+            self.removedChanged.emit()
+
+    @Property(str, notify=removedChanged)
+    def removedKey(self):
+        """The masked form of the key that can still come back ("" when none)."""
+        return keystore.mask(self._removed[1]) if self._removed else ""
+
+    @Slot()
+    def undoRemoveKey(self) -> None:
+        if self._removed is None:
+            return
+        index, key = self._removed
+        self._forget_removed()
+        if self.keystore.restore(key, index):
+            self.app.log.add("A key was put back")
+            self.rebuild()
+            self.refreshStates()
+            self._ok("keys")
+
+    def _forget_removed(self) -> None:
+        self._undo_timer.stop()
+        if self._removed is not None:
+            self._removed = None
+            self.removedChanged.emit()
 
     @Slot()
     def refreshStates(self):
@@ -244,7 +278,9 @@ class SettingsVM(QObject):
     @Slot(str)
     def addModel(self, name):
         name = name.strip()
-        if name and name not in self._models:
+        if name and name in self._models:
+            self._say(sr.ALREADY)
+        elif name:
             self.app.log.add("Model added: %s" % name)
             self._save_models(self._models + [name])
 

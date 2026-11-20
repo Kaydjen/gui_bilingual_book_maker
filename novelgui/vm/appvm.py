@@ -20,6 +20,7 @@ from ..ctl.winlog import WindowLog
 from ..winstate import WinState
 
 GEOMETRY_DELAY_MS = 500
+MAX_QUEUED = 3                    # messages that may wait behind the one on screen
 KEY_SCREEN, KEY_GEOMETRY, KEY_TRAY_SEEN = "screen", "geometry", "tray_seen"
 LIBRARY_READY, LIBRARY_FIRST, LIBRARY_MISSING = "ready", "first", "missing"
 TOAST_TITLES = {"finished": "Translation finished", "failed": "Translation stopped", "key": "A key stopped working"}
@@ -73,6 +74,7 @@ class AppVM(QObject):
         self._panel = ""
         self._panel_data: dict = {}
         self._message = ""
+        self._queued: list = []                    # messages waiting for the one on screen to be dismissed
         self._settings_open = False
         self._log_open = False
         self._banner = False
@@ -184,15 +186,31 @@ class AppVM(QObject):
         return self._message
 
     def _set_message(self, text):
-        if text != self._message:
+        """A second message waits until the first is dismissed (at most MAX_QUEUED wait, the same text never twice)."""
+        if text == "":
+            self._advance_message()
+        elif not self._message:
             self._message = text
+            self.messageChanged.emit()
+        elif text != self._message and text not in self._queued and len(self._queued) < MAX_QUEUED:
+            self._queued.append(text)
+
+    def _advance_message(self) -> None:
+        nxt = self._queued.pop(0) if self._queued else ""
+        if nxt != self._message:
+            self._message = nxt
             self.messageChanged.emit()
 
     message = Property(str, _get_message, _set_message, notify=messageChanged)
 
     @Slot()
     def dismissMessage(self):
-        self.message = ""
+        self._advance_message()
+
+    def fail(self, plain: str, exc=None) -> None:
+        """A failure the user must hear of, in plain words; the exception (if any) goes to the log, never to the screen."""
+        self.log.add("%s %s" % (plain, exc) if exc is not None and str(exc) else plain, problem=True)
+        self.message = plain
 
     # ------------------------------------------------------------- steps (1.1-1.9)
     @Property(str, notify=screenChanged)

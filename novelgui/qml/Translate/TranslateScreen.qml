@@ -165,7 +165,7 @@ Item {
     BottomBar {
         id: bar
         objectName: "trBar"
-        visible: screen.segments.length > 0 && !screen.editing && screen.deleted === ""
+        visible: screen.segments.length > 0 && !screen.editing
         anchors.horizontalCenter: parent.horizontalCenter
         y: pane.y + pane.height - height - 12
         segments: screen.segments

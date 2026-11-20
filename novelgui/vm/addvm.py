@@ -113,7 +113,7 @@ class AddVM(QObject):
     def _check_failed(self, exc) -> None:
         self._checking = False
         self.checkingChanged.emit()
-        self.app.message = "The files could not be checked: %s." % exc
+        self.app.fail("The files could not be checked.", exc)
 
     def _checked(self, files) -> None:
         self._checking = False
@@ -205,7 +205,7 @@ class AddVM(QObject):
 
     def _add_failed(self, exc) -> None:
         self.books.set_adding(False)
-        self.app.message = "The books could not be added: %s." % exc
+        self.app.fail("The books could not be added.", exc)
         self.books.reload()
 
     def _added(self, results, skipped) -> None:
