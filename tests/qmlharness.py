@@ -290,7 +290,8 @@ def _child(req: dict) -> int:
                 p = o.mapToScene(QPointF(0, 0))
                 d.update(x=p.x(), y=p.y(), w=o.width(), h=o.height(), visible=o.isVisible(), opacity=o.opacity())
             for prop in ("text", "color", "radius", "running", "enabled", "currentIndex", "value", "selected", "current",
-                         "contentY", "contentHeight", "count", "kind", "activeFocus", "live", "checked", "settled", "fraction", "auto"):
+                         "contentY", "contentHeight", "count", "kind", "activeFocus", "live", "checked", "settled", "fraction", "auto",
+                         "cursorPosition"):
                 v = o.property(prop)
                 if v is not None:
                     d[prop] = val(v)

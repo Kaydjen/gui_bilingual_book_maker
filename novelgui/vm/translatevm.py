@@ -191,7 +191,7 @@ class TranslateVM(QObject):
                 "queueDown": t.TR_QUEUE_DOWN, "queueRemove": t.TR_QUEUE_X, "queueStop": t.TR_QUEUE_STOP,
                 "problemRetry": t.TR_PROBLEM["retry"], "problemKeep": t.TR_PROBLEM["keep"],
                 "problemIgnore": t.TR_PROBLEM["ignore"], "problemSave": t.TR_PROBLEM["save"],
-                "promptText": t.TR_PROMPT_TEXT, "promptNothing": t.TR_PROMPT_NOTHING,
+                "promptText": t.TR_PROMPT_TEXT, "promptNothing": t.TR_PROMPT_NOTHING, "promptCopy": t.TR_PROMPT_COPY,
                 "promptDraft": t.TR_PROMPT_DRAFT, "problemFailed": t.TR_PROBLEM["failed"],
                 "problemBusy": t.TR_PROBLEM["busy"], "dontResume": t.TR_BAR["dont_resume"] % "the return time",
                 "more": t.TR_BAR["more"], "readOff": t.READ_OFF}
@@ -706,7 +706,8 @@ class TranslateVM(QObject):
                "toEnabled": has and not lock, "toTip": tto, "fromText": ("From %s" % self._series["source"])
                if self._series["source"] else "", "fromTip": tips.TR_FROM,
                "promptName": pname, "promptEnabled": has and not self._job.foreign, "promptTip": tips.TR_PROMPT,
-               "editEnabled": has and not self._job.foreign, "editTip": tips.TR_PROMPT_EDIT % pname,
+               "editEnabled": has and not self._job.foreign, "editTip": tips.TR_PROMPT_VIEW if pname.lower() == RESERVED
+               else tips.TR_PROMPT_EDIT % pname,
                "sampleText": text, "sampleEnabled": has and enabled and not self._job.foreign, "sampleTip": stip,
                "sampling": sampling, "samplePercent": pct, "languageRed": has and not lang}
         if top != self._top:
@@ -1616,8 +1617,10 @@ class TranslateVM(QObject):
         if not self._path or self._panel:
             return
         name = "" if fresh else str(self._series["prompt"])
-        name = "" if name.lower() == RESERVED else name
         path = self._path
+        if name.lower() == RESERVED:
+            self._show_default(path)
+            return
         text = "" if fresh else fbooks.current_prompt_text(path)
         draft = self.app.win.prompt_draft(path)
         orig = (name, text)
@@ -1625,6 +1628,31 @@ class TranslateVM(QObject):
             name, text = draft
         self._draft_name, self._draft_text, self._prompt_orig = name, text, orig
         self._open_panel("prompt", {"title": "Prompt", "name": name, "text": text, "draft": draft is not None and draft != orig,
+                                    "error": self._prompt_error(name), "ok": "Save", "cancel": "Cancel"})
+
+    def _show_default(self, path) -> None:
+        """Default is read, not edited: the same panel read-only, `Close | Make a copy`."""
+        try:
+            text = fbooks.default_prompt_text(path)
+        except (OSError, ValueError, KeyError) as exc:
+            self.app.message = "The Default prompt cannot be read: %s" % exc
+            return
+        self._prompt_orig = ("Default", text)
+        self._open_panel("prompt", {"title": "Default prompt", "name": "Default", "text": text, "draft": False,
+                                    "readonly": True, "error": "", "ok": "Make a copy", "cancel": "Close"})
+
+    @Slot()
+    def promptCopyDefault(self) -> None:
+        """`Make a copy` of the Default view: the editor opens on a new prompt with Default's text, ready to save."""
+        if self._panel != "prompt" or not self._panel_data.get("readonly"):
+            return
+        text = self._panel_data["text"]
+        taken = {n.lower() for n in self.prompts.names()}
+        name, k = "Default copy", 2
+        while name.lower() in taken:
+            name, k = "Default copy %d" % k, k + 1
+        self._draft_name, self._draft_text, self._prompt_orig = name, text, ("", "")
+        self._open_panel("prompt", {"title": "Prompt", "name": name, "text": text, "draft": False, "copy": True,
                                     "error": self._prompt_error(name), "ok": "Save", "cancel": "Cancel"})
 
     def _prompt_error(self, name: str) -> str:
@@ -1661,6 +1689,9 @@ class TranslateVM(QObject):
     def promptClosed(self, name: str, text: str, keep: bool) -> None:
         """Cancel throws the edit away; Esc and a click outside keep it as a draft (9.2)."""
         if self._panel != "prompt" and not keep:
+            return
+        if self._panel_data.get("readonly"):
+            self._finish_prompt()
             return
         path = self._path
         if path:

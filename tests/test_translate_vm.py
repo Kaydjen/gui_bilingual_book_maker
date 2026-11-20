@@ -933,22 +933,43 @@ class SampleBlocksStart(Base):
 class Prompt(Base):
     def test_draft_is_kept_for_the_next_edit(self):
         vm = self.vm
-        vm.promptEdit(False)
+        vm.promptEdit(True)
         self.assertEqual(vm.panel, "prompt")
-        original = (vm.panelData["name"], vm.panelData["text"])
-        self.assertEqual(original[0], "")
-        self.assertTrue(original[1])
+        self.assertEqual((vm.panelData["name"], vm.panelData["text"]), ("", ""))
         err = vm.promptChanged("Literary", "my text {language}")
         self.assertEqual(err, "")
         vm.promptClosed("Literary", "my text {language}", True)           # Esc / outside: kept as a draft
         self.assertEqual(vm.panel, "")
-        vm.promptEdit(False)
+        vm.promptEdit(True)
         self.assertEqual((vm.panelData["name"], vm.panelData["text"]), ("Literary", "my text {language}"))
         self.assertTrue(vm.panelData["draft"])
         vm.promptClosed("Literary", "my text {language}", False)          # Cancel throws it away
-        vm.promptEdit(False)
+        vm.promptEdit(True)
         self.assertEqual(vm.panelData["name"], "")
         self.assertFalse(vm.panelData["draft"])
+
+    def test_default_is_shown_read_only_and_copied(self):
+        vm = self.vm
+        from novelgui.facade import books as fbooks
+        shipped = fbooks.current_prompt_text(self.path)
+        vm.promptEdit(False)
+        self.assertTrue(vm.panelData["readonly"])
+        self.assertEqual((vm.panelData["title"], vm.panelData["text"], vm.panelData["ok"]), ("Default prompt", shipped, "Make a copy"))
+        vm.promptClosed("Default", shipped, True)                         # Esc: nothing to keep
+        self.assertEqual(vm.panel, "")
+        self.assertIsNone(self.app.win.prompt_draft(self.path))
+        vm.promptEdit(True)
+        vm.promptSave("Default copy", "x {language}")
+        vm.promptEdit(False)                                              # the current one is a saved prompt now: edited
+        self.assertFalse(vm.panelData.get("readonly", False))
+        vm.promptClosed("Default copy", "x {language}", False)
+        vm.choosePrompt("default")
+        vm.promptEdit(False)
+        vm.promptCopyDefault()
+        self.assertEqual((vm.panelData["name"], vm.panelData["text"]), ("Default copy 2", shipped), "a free name")
+        self.assertTrue(vm.panelData["copy"])
+        vm.promptSave("Default copy 2", shipped)
+        self.assertEqual(vm.top["promptName"], "Default copy 2")
 
     def test_save_names_the_prompt_and_applies_it_to_the_series(self):
         vm = self.vm

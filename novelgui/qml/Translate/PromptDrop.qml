@@ -62,7 +62,10 @@ Floating {
                            : (item.modelData.current === true || itemHover.hovered ? Theme.bright : Theme.text)
                 }
                 HoverHandler { id: itemHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: { drop.close(); drop.picked(item.modelData.id) } }
+                TapHandler {
+                    enabled: !xHover.hovered                // a tap on `✕` is the delete only, not also a pick
+                    onTapped: { drop.close(); drop.picked(item.modelData.id) }
+                }
                 AppText {
                     objectName: "promptDelete" + item.index
                     visible: item.modelData.deletable === true

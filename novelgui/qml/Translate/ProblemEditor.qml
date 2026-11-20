@@ -61,6 +61,15 @@ Item {
         color: Theme.pane
         border.width: 1
         border.color: edit.activeFocus ? Theme.fieldFocus : "#2a2a2a"
+        MouseArea {
+            // the margin around the text: a click there types at the end
+            anchors.fill: parent
+            cursorShape: Qt.IBeamCursor
+            onPressed: {
+                edit.forceActiveFocus()
+                edit.cursorPosition = edit.length
+            }
+        }
         Flickable {
             id: flick
             anchors.fill: parent
@@ -73,6 +82,7 @@ Item {
                 id: edit
                 objectName: "problemEdit"
                 width: flick.width
+                height: Math.max(implicitHeight, flick.height)
                 wrapMode: TextEdit.Wrap
                 color: Theme.bright
                 selectionColor: Theme.s4
@@ -88,6 +98,17 @@ Item {
                 Keys.onPressed: event => {
                     Tips.dismiss()
                     event.accepted = false
+                }
+                MouseArea {
+                    // the empty space below the text: the cursor goes to the end of the text
+                    y: edit.contentHeight
+                    width: parent.width
+                    height: Math.max(0, parent.height - y)
+                    cursorShape: Qt.IBeamCursor
+                    onPressed: {
+                        edit.forceActiveFocus()
+                        edit.cursorPosition = edit.length
+                    }
                 }
             }
         }
