@@ -27,14 +27,13 @@ class Notifier:
 
 
 class RealNotifier(Notifier):
-    def __init__(self, window=None):
+    def __init__(self, window=None, tray=None):
         self.window = window            # the QQuickWindow, for the taskbar flash
-        self._tray = None
+        self.tray = tray                # the toast is a balloon of the tray icon; its click routes by `route`
 
     def toast(self, title: str, text: str, route: str = "") -> None:
-        # The tray balloon (QSystemTrayIcon, click routing by `route`) comes with the screens; until then a
-        # toast is not shown. The recording notifier is what tests check.
-        return
+        if self.tray is not None and self.tray.available:
+            self.tray.show_message(title, text, route)
 
     def flash(self) -> None:
         try:
@@ -64,7 +63,7 @@ class RecordingNotifier(Notifier):
         self._write({"kind": "flash"})
 
 
-def make_notifier(window=None) -> Notifier:
+def make_notifier(window=None, tray=None) -> Notifier:
     if os.environ.get(paths.ENV_DATA) and os.environ.get(ENV_NOTIFY) != "real":
         return RecordingNotifier()
-    return RealNotifier(window)
+    return RealNotifier(window, tray)

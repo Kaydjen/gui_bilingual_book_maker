@@ -101,8 +101,8 @@ class Result:
         return len(self.animations)
 
 
-def _key(name, data, scale, size, actions, cpu) -> str:
-    blob = json.dumps([name, data, scale, size, actions, cpu], sort_keys=True)
+def _key(name, data, scale, size, actions, cpu, vm) -> str:
+    blob = json.dumps([name, data, scale, size, actions, cpu, vm], sort_keys=True)
     return hashlib.md5(blob.encode()).hexdigest()[:10]
 
 
@@ -110,19 +110,19 @@ _CACHE: dict = {}
 
 
 def scenario(name: str, data: dict | None = None, scale: float = 1.0, size=(1040, 720), actions=None, cpu=None,
-             tag: str = "", timeout: int = 90) -> Result:
+             tag: str = "", timeout: int = 90, vm: str = "") -> Result:
     """Run tests/qmlscenes/<name>.qml. Raises HarnessError on any QML warning, Python exception or crash."""
     py = qt_python()
     if not py:
         raise HarnessError("PySide6 is not available")
     data = data or {}
-    key = _key(name, data, scale, list(size), actions, cpu)
+    key = _key(name, data, scale, list(size), actions, cpu, vm)
     if key in _CACHE:
         return _CACHE[key]
     out = shots_dir()
     stem = "%s%s_%d" % (name, ("_" + tag) if tag else "", round(scale * 100))
     req = {"scene": name, "data": data, "scale": scale, "size": list(size), "actions": actions or [], "cpu": cpu,
-           "out": str(out), "stem": stem}
+           "out": str(out), "stem": stem, "vm": vm}
     env = dict(os.environ)
     env.update(QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", QT_QPA_FONTDIR=r"C:\Windows\Fonts",
                PYTHONUTF8="1", QT_QUICK_CONTROLS_STYLE="Basic")
@@ -229,6 +229,14 @@ def _child(req: dict) -> int:
     engine.addImportPath(str(QML_ROOT))
     rec = Rec()
     ctx = engine.rootContext()
+    vmobjs: dict = {}
+    extras: dict = {}
+    if req.get("vm"):
+        import importlib
+        mod, _, fn = req["vm"].partition(":")
+        vmobjs, extras = getattr(importlib.import_module(mod), fn)(req["data"])
+        for k, v in vmobjs.items():
+            ctx.setContextProperty(k, v)
     ctx.setContextProperty("fake", req["data"])
     ctx.setContextProperty("rec", rec)
     ctx.setContextProperty("harnessScene", QUrl.fromLocalFile(str(SCENES / (req["scene"] + ".qml"))).toString())
@@ -280,7 +288,7 @@ def _child(req: dict) -> int:
                 p = o.mapToScene(QPointF(0, 0))
                 d.update(x=p.x(), y=p.y(), w=o.width(), h=o.height(), visible=o.isVisible(), opacity=o.opacity())
             for prop in ("text", "color", "radius", "running", "enabled", "currentIndex", "value", "selected", "current",
-                         "contentY", "contentHeight", "count", "kind", "activeFocus", "live"):
+                         "contentY", "contentHeight", "count", "kind", "activeFocus", "live", "checked", "settled", "fraction"):
                 v = o.property(prop)
                 if v is not None:
                     d[prop] = val(v)
@@ -321,7 +329,7 @@ def _child(req: dict) -> int:
         shots[name] = fn
 
     mods = {"ctrl": Qt.ControlModifier, "shift": Qt.ShiftModifier, "": Qt.NoModifier}
-    keys = {n: getattr(Qt, "Key_" + n) for n in ("Escape", "Return", "Tab", "Down", "Up", "Space", "Home", "End", "A", "Delete", "F2")}
+    keys = {n: getattr(Qt, "Key_" + n) for n in ("Escape", "Return", "Tab", "Down", "Up", "Space", "Home", "End", "A", "Delete", "F2", "1", "2", "3", "4")}
 
     def act(a):
         op = a["op"]
@@ -341,12 +349,18 @@ def _child(req: dict) -> int:
             QTest.keyClick(view, keys[a["key"]], mods[a.get("mod", "")])
         elif op == "type":
             for ch in a["text"]:
-                key = Qt.Key_Space if ch == " " else getattr(Qt, "Key_" + ch.upper())
+                key = {" ": Qt.Key_Space, "-": Qt.Key_Minus, ".": Qt.Key_Period}.get(ch) or getattr(Qt, "Key_" + ch.upper())
                 mod = Qt.ShiftModifier if ch.isupper() else Qt.NoModifier
                 for kind in (QEvent.KeyPress, QEvent.KeyRelease):
                     QGuiApplication.sendEvent(view, QKeyEvent(kind, key, mod, ch))
         elif op == "set":
             find(a["name"]).setProperty(a["prop"], a["value"])
+        elif op == "call":
+            getattr(vmobjs[a["obj"]], a["fn"])(*a.get("args", []))
+        elif op == "py":
+            events.append([a["name"], extras[a["name"]](*a.get("args", []))])
+        elif op == "get":
+            events.append([a["obj"] + "." + a["prop"], getattr(vmobjs[a["obj"]], a["prop"])()])
         elif op == "shot":
             shoot(a["name"])
         elif op == "dump":
@@ -393,6 +407,8 @@ def _child(req: dict) -> int:
     items, anims = final["items"], final["anims"]
     if cpu:
         anims = cpu["running"] if cpu["state"] != "visible" else anims
+    if "__close" in extras:
+        extras["__close"]()
     return _finish(req, warnings, errors, events, items, after, anims, cpu, shots)
 
 

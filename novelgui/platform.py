@@ -232,3 +232,22 @@ def message_box(text: str, title: str = "Novel") -> bool:
         return True
     except Exception:
         return False
+
+
+def install_frame(app, window, model):
+    """The frameless title bar (window_spec 9.10): on Windows the native event filter of runtime/winframe.py is
+    installed and `model.custom` turns true; the returned object must be kept alive. Elsewhere (Linux: the native
+    frame) nothing happens and None comes back."""
+    if not IS_WINDOWS:
+        return None
+    try:
+        if app.platformName() != "windows":          # offscreen and other Qt platforms have no native window
+            return None
+        from .runtime import winframe
+        flt = winframe.FrameFilter(window, model)
+        app.installNativeEventFilter(flt)
+        model.set_custom(True)
+        flt.refresh_frame()
+        return flt
+    except Exception:
+        return None

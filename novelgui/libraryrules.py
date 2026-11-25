@@ -30,11 +30,25 @@ def natural_key(text: str) -> tuple:
 
 
 # ---------------------------------------------------------------- first start and folder choice
-def default_library_path(home) -> Path:
-    """`Novel library` in Documents when the user has one, else in the home folder."""
+def _under(path: Path, parent) -> bool:
+    if not parent:
+        return False
+    try:
+        a = os.path.normcase(os.path.abspath(str(path)))
+        b = os.path.normcase(os.path.abspath(str(parent)))
+    except (OSError, ValueError):
+        return False
+    return a == b or a.startswith(b.rstrip("\\/") + os.sep)
+
+
+def default_library_path(home, onedrive=None) -> Path:
+    """`Novel library` in Documents when the user has one, else in the home folder. A Documents folder that lies
+    under OneDrive is not used (2.1: the library is never on OneDrive): the library goes into the home folder."""
     home = Path(home)
     docs = home / "Documents"
-    return (docs if docs.is_dir() else home) / LIBRARY_NAME
+    if docs.is_dir() and not _under(docs, onedrive):
+        return docs / LIBRARY_NAME
+    return home / LIBRARY_NAME
 
 
 def chooser_start(library, home) -> str:

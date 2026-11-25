@@ -75,6 +75,15 @@ QtObject {
         return Application.font.family
     }
 
+    // symbols (gear, window buttons): a monochrome font, never the colour emoji one
+    readonly property string symbolFamily: {
+        var want = ["Segoe UI Symbol", "Noto Sans Symbols2", "DejaVu Sans", "Noto Sans"]
+        for (var i = 0; i < want.length; ++i)
+            if (installed.indexOf(want[i]) >= 0)
+                return want[i]
+        return fontFamily
+    }
+
     // ---- motion
     readonly property int tipDelay: 600
     readonly property int durFast: 150

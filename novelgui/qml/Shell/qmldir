@@ -1,0 +1,15 @@
+module Shell
+ClosingPanel 1.0 ClosingPanel.qml
+FirstStart 1.0 FirstStart.qml
+FolderIcon 1.0 FolderIcon.qml
+Header 1.0 Header.qml
+HeaderStep 1.0 HeaderStep.qml
+KeyRow 1.0 KeyRow.qml
+LogView 1.0 LogView.qml
+ModelRow 1.0 ModelRow.qml
+SectionHead 1.0 SectionHead.qml
+Seg2 1.0 Seg2.qml
+SettingsPanel 1.0 SettingsPanel.qml
+ShellRoot 1.0 ShellRoot.qml
+Switch 1.0 Switch.qml
+TitleButton 1.0 TitleButton.qml
