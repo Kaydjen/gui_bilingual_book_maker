@@ -5,7 +5,7 @@ shellVm), `extras` are callables the scene actions may run (`op: "py"`). Everyth
 NOVELGUI_DATA; the tray and the notifier are the recording ones; a service address is used only when `data["api"]` names
 the fake server.
 
-data keys: library ("ready" | "first" | "missing"), keys, models, pace, keep_awake, screen, run (RunInfo fields), custom
+data keys: failed_blocks [[chapter number, block, reason]], norun (the Translate runner is a stub, tests/translatedrive.py), library ("ready" | "first" | "missing"), keys, models, pace, keep_awake, screen, run (RunInfo fields), custom
 (bool: the custom frame), edge (bool), forceButtons, log [[text, series, problem]], pool {"<key index>": [kind, +seconds]},
 tray (bool: the tray exists), tray_seen, api.
 """
@@ -32,6 +32,8 @@ def make(data):
     os.environ.pop("NOVELGUI_TRAY", None)
     if data.get("api"):
         os.environ["NOVELGUI_API_BASE"] = data["api"]
+    elif data.get("norun"):
+        os.environ["NOVELGUI_API_BASE"] = "http://127.0.0.1:9"       # nothing listens: a request that left would fail loudly
     else:
         os.environ.pop("NOVELGUI_API_BASE", None)
     data_dir = root / "data"
@@ -49,6 +51,9 @@ def make(data):
             from tests import libfixture        # one small book: a series without books would show the red `Add book`
             libfixture.build(lib, [{"name": "Knights", "books": [{"stem": "Book 1", "chapters": 3, "paras": 1}]}])
             (lib / "Knights" / ".state").mkdir(exist_ok=True)
+        for number, block, reason in data.get("failed_blocks", []):        # blocks that failed before the window opened
+            from tests import translatedemo
+            translatedemo.write_failed_block(lib / "Knights", "Book 1", translatedemo.position(number), block, reason)
     elif state == "missing":
         settings["library"] = str(root / "Gone" / "Novel library")
     n_keys = int(data.get("keys", 0))
@@ -102,12 +107,14 @@ def make(data):
     incoming = _incoming(root / "Incoming", data.get("incoming", []), lib)
     if data.get("scan_hold"):
         parts.books_vm.scan_hold_ms = int(data["scan_hold"])
+    if data.get("norun"):
+        parts.run.submit = lambda fn, **kw: None                    # the runner is never started; tests/translatedrive.py feeds events
     parts.terms_vm.mine_names = bool(data.get("mine", False))
     parts.terms_vm.auto_scan = bool(data.get("autoscan", False))
     shell = Shell()
     objects = {"shellVm": shell, "appVm": parts.app, "settingsVm": parts.settings_vm, "logVm": parts.log_vm,
                "frameVm": parts.frame, "booksVm": parts.books_vm, "addVm": parts.add_vm, "readerVm": parts.reader_vm,
-               "termsVm": parts.terms_vm}
+               "termsVm": parts.terms_vm, "translateVm": parts.translate_vm}
     extras = {
         "__close": parts.close,
         "tray": lambda: {"lines": parts.tray.lines, "actions": parts.tray.actions, "tooltip": parts.tray.tooltip,
@@ -144,6 +151,8 @@ def make(data):
         "exportTo": lambda: parts.terms_vm.exportPicked(str(root / "Incoming" / "terms-Knights.json")),
         "termsTrash": lambda: [p.name for p in (data_dir / "local" / "terms_history").rglob("*.json.gz")],
     }
+    from tests import translatedrive
+    extras.update(translatedrive.Drive(parts, lib, keys).extras())
     return objects, extras
 
 

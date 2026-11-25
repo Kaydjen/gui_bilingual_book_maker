@@ -11,6 +11,7 @@ Item {
 
     property var app: null
     property var frame: null
+    property var translate: null
     property bool forceButtons: false
     readonly property bool custom: frame !== null && frame.custom
     readonly property bool maximized: Window.window !== null && Window.window.visibility === Window.Maximized
@@ -21,6 +22,12 @@ Item {
 
     height: 46
 
+    // a click on a step; the word Translate also asks the Translate screen what the click means (F7: its queue or its current chapter)
+    function stepClicked(id) {
+        app.go(id)
+        if (id === "translate" && app.screen === "translate" && translate !== null)
+            translate.headerClicked()
+    }
     function box(item) {
         var p = item.mapToItem(null, 0, 0)
         return [p.x, p.y, item.width, item.height]
@@ -120,7 +127,7 @@ Item {
                         tip: cell.modelData.id === "translate" ? header.app.translateTip
                              : (cell.modelData.id === "terms" && header.app.termsState === "red" ? header.app.tips.termsRed
                                 : header.app.tips[cell.modelData.id])
-                        onClicked: header.app.go(cell.modelData.id)
+                        onClicked: header.stepClicked(cell.modelData.id)
                     }
                 }
             }

@@ -357,9 +357,11 @@ def _child(req: dict) -> int:
         if op == "wait":
             spin(a["ms"])
         elif op == "click":
-            QTest.mouseClick(view, Qt.LeftButton, mods[a.get("mod", "")], center(a["name"]))
+            QTest.mouseClick(view, Qt.RightButton if a.get("button") == "right" else Qt.LeftButton, mods[a.get("mod", "")],
+                             center(a["name"]))
         elif op == "clickAt":
-            QTest.mouseClick(view, Qt.LeftButton, mods[a.get("mod", "")], QPoint(a["x"], a["y"]))
+            QTest.mouseClick(view, Qt.RightButton if a.get("button") == "right" else Qt.LeftButton, mods[a.get("mod", "")],
+                             QPoint(a["x"], a["y"]))
         elif op == "press":
             QTest.mousePress(view, Qt.LeftButton, mods[a.get("mod", "")], center(a["name"]) if "name" in a else QPoint(a["x"], a["y"]))
         elif op == "moveTo":

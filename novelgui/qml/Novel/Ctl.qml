@@ -11,6 +11,8 @@ Item {
     property string editText: ""
     property bool red: false
     property bool off: false
+    property bool arrow: true
+    property bool bright: false
     property real progress: -1
     property var tip: ""
     property var editTip: ""
@@ -56,7 +58,7 @@ Item {
     }
     Row {
         id: main
-        objectName: "ctlMain"
+        objectName: ctl.objectName + "Main"
         height: parent.height
         leftPadding: 12
         rightPadding: 12
@@ -68,12 +70,13 @@ Item {
             color: ctl.off ? Theme.faint : Theme.dim
         }
         AppText {
-            objectName: "ctlValue"
+            objectName: ctl.objectName + "Value"
             height: parent.height
             text: ctl.value
-            color: ctl.off ? Theme.faint : (ctl.red ? Theme.accent : (mainHover.hovered ? Theme.bright : Theme.text))
+            color: ctl.off ? Theme.faint : (ctl.red ? Theme.accent : (mainHover.hovered || ctl.bright ? Theme.bright : Theme.text))
         }
         AppText {
+            visible: ctl.arrow
             height: parent.height
             text: "▾"
             font.pixelSize: 10
@@ -91,6 +94,7 @@ Item {
     }
     AppText {
         id: edit
+        objectName: ctl.objectName + "Edit"
         visible: ctl.editText !== ""
         x: main.width + 1
         height: parent.height
@@ -100,7 +104,13 @@ Item {
         color: ctl.off ? Theme.faint : (editHover.hovered ? Theme.bright : Theme.dim)
         HoverHandler { id: editHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: !ctl.off; onTapped: ctl.editClicked() }
+        TipArea { tip: ctl.editTip }
     }
-    TipArea { tip: ctl.tip }
+    TipArea {
+        anchors.fill: undefined
+        width: main.width
+        height: parent.height
+        tip: ctl.tip
+    }
     FocusRing { target: ctl; inner: Theme.rControl }
 }

@@ -144,7 +144,7 @@ def range_text(infos, indices) -> str:
     """`2697-2750`, or `5, 9-12`: runs of consecutive list positions by the numbers the user reads."""
     out = []
     run: list = []
-    for i in sorted(indices):
+    for i in sorted(i for i in indices if 0 <= i < len(infos)):
         if run and i == run[-1] + 1:
             run.append(i)
         else:
@@ -167,6 +167,7 @@ def count_text(n: int) -> str:
 def next_step(infos, indices, blocking: int = 0) -> tuple:
     """(kind, text): what the selection leads to: `Review 12 terms ›` (red) when terms block it, `Export ›` when every
     selected chapter is translated, else `Translate ›`."""
+    indices = [i for i in indices if 0 <= i < len(infos)]
     if indices and blocking:
         return "review", "Review %d %s ›" % (blocking, "term" if blocking == 1 else "terms")
     if indices and all(infos[i].state.kind == "translated" for i in indices):

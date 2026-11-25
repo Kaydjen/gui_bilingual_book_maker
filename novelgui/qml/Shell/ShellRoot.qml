@@ -3,6 +3,7 @@ import QtQuick
 import Novel
 import Books
 import Terms
+import Translate
 
 // The content of the main window: header, ONE screen at a time (placeholders for steps 5-8), the first-start block, the
 // panels (settings, closing, library not found), the message panel and the second-start notice. Everything it shows
@@ -19,6 +20,7 @@ AppRoot {
     property var add: null
     property var reader: null
     property var terms: null
+    property var translate: null
     property bool forceButtons: false
     readonly property bool ready: app !== null && app.libraryState === "ready"
 
@@ -33,6 +35,7 @@ AppRoot {
         app: root.app
         frame: root.frame
         forceButtons: root.forceButtons
+        translate: root.translate
         onGearClicked: root.app.openSettings()
     }
     Rectangle {
@@ -44,7 +47,7 @@ AppRoot {
         height: parent.height - header.height - 16
         radius: Theme.rPane
         // Books draws its own two panes on the black window (mock .pane); the other screens sit in this one
-        color: root.app.screen === "books" && root.ready ? "transparent" : Theme.pane
+        color: (root.app.screen === "books" || root.app.screen === "translate") && root.ready ? "transparent" : Theme.pane
         clip: true
 
         Item {
@@ -81,6 +84,13 @@ AppRoot {
             objectName: "screen_translate"
             anchors.fill: parent
             visible: root.app.screen === "translate"
+            TranslateScreen {
+                objectName: "translateScreen"
+                anchors.fill: parent
+                visible: root.ready && !root.reader.isOpen
+                translate: root.translate
+                app: root.app
+            }
             ReaderTab {
                 objectName: "readerScreen"
                 anchors.fill: parent
@@ -135,6 +145,14 @@ AppRoot {
     MovePanel {
         objectName: "movePanel"
         books: root.books
+    }
+    JobPanel {
+        objectName: "jobPanel"
+        translate: root.translate
+    }
+    PromptPanel {
+        objectName: "promptPanel"
+        translate: root.translate
     }
     SettingsPanel {
         objectName: "settingsPanel"

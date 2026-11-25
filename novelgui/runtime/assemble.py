@@ -10,7 +10,9 @@ from pathlib import Path
 from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtGui import QGuiApplication, QWindow
 
-from .. import keystore, platform
+from .. import keystore, platform, qtclock
+from ..ctl.runcontrol import RunControl
+from ..ctl.shellrules import REQUEST_CAP_S
 from ..ctl.winlog import WindowLog
 from ..crunchclient import CrunchClient
 from ..lanes import Lanes
@@ -22,6 +24,7 @@ from ..vm.readervm import ReaderVM
 from ..vm.logvm import LogVM
 from ..vm.settingsvm import SettingsVM
 from ..vm.termsvm import TermsVM
+from ..vm.translatevm import TranslateVM
 from . import notify, paths, tray as trays
 from .frame import FrameModel
 
@@ -50,6 +53,15 @@ class Parts:
         self.add_vm = AddVM(self.app, self.lanes)
         self.books_vm = BooksVM(self.app, self.lanes, self.crunch, self.add_vm)
         self.terms_vm = TermsVM(self.app, self.lanes, self.books_vm, self.crunch, self.local)
+        self.translate_vm = TranslateVM(self.app, self.lanes, self.books_vm, self.crunch, self.terms_vm)
+        # the ONE place that starts, watches and stops translations (window_spec 13.2); nothing starts by itself (13.13)
+        self.run = RunControl(
+            winstate=self.app.win, submit=self.lanes.submit, timer=qtclock.timer, sink=self.translate_vm,
+            keys=lambda: list(self.keystore.keys), models=self.translate_vm.models,
+            run_config=self.translate_vm.run_config, setting=self.settings.get, view=self.books_vm.session.view,
+            flush=self.app.flush, close_cap_ms=REQUEST_CAP_S * 1000)
+        self.translate_vm.attach(self.run)
+        self.app.stopRequested.connect(self.translate_vm.stopForClose)
         self.books_vm.readRequested.connect(self.reader_vm.openChapter)
         self.window = None
         self.frame_filter = None
@@ -57,9 +69,10 @@ class Parts:
     def context(self, shell) -> dict:
         return {"shellVm": shell, "appVm": self.app, "settingsVm": self.settings_vm, "logVm": self.log_vm,
                 "frameVm": self.frame, "booksVm": self.books_vm, "addVm": self.add_vm, "readerVm": self.reader_vm,
-                "termsVm": self.terms_vm}
+                "termsVm": self.terms_vm, "translateVm": self.translate_vm}
 
     def close(self) -> None:
+        self.translate_vm.shutdown()
         self.app.flush()
         self.crunch.close()
         self.lanes.close()

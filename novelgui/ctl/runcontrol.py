@@ -37,6 +37,7 @@ ENDED = {"finished": jq.FINISHED, "waiting_quota": jq.QUOTA, "waiting_terms": jq
 PROGRESS_GATE_MS = 100
 WAKE_CAP_S = 600            # a long wait is re-armed in steps (a sleeping PC skews a single long timer)
 CLOSE_CAP_MS = 60_000
+_UNSET = object()
 
 
 class Run:
@@ -57,6 +58,7 @@ class Run:
         self.busy_text = ""                 # the core refused to start (another process holds the series)
         self.started = clock()
         self.done_at_start = 0
+        self.sample = (0, 0)                # (blocks answered, blocks asked) of a sample, from its progress events
 
     @property
     def paused_until(self):
@@ -81,7 +83,8 @@ class Run:
 
 class RunControl:
     def __init__(self, *, winstate, submit, timer, sink, keys, models, run_config, setting=lambda name: None,
-                 view=lambda: ("", "", []), flush=lambda: None, keep_awake=None, clock=time.time):
+                 view=lambda: ("", "", []), flush=lambda: None, keep_awake=None, clock=time.time,
+                 close_cap_ms: int = CLOSE_CAP_MS):
         self.winstate = winstate
         self.submit = submit
         self.timer = timer
@@ -94,6 +97,7 @@ class RunControl:
         self.flush = flush
         self._keep_awake = keep_awake or (lambda on: platform.keep_awake(on))
         self.clock = clock
+        self.close_cap_ms = close_cap_ms
         self.queue = Queue.from_list(winstate.get("queue", [], list))
         self.sched = Scheduler(self.queue, clock=clock)
         self.run: Run | None = None
@@ -174,9 +178,10 @@ class RunControl:
         return list(self.queue.items)
 
     # ------------------------------------------------------------- the header (1.2)
-    def indicator(self) -> str:
+    def indicator(self, view=_UNSET) -> str:
         """What follows `Translate` in the path: the running job as `▶ series · 62 %` and the queue count; else the
-        reason a job or the queue waits; else empty."""
+        reason a job or the queue waits; else empty. `view`: the JobView of the tracked series when the caller has
+        it (None = no job); without it the record is read from disk."""
         r = self.run
         n = len(self.queue)
         if r is not None and r.kind == "job":
@@ -187,7 +192,7 @@ class RunControl:
         st = self.sched.status()
         if st:
             return st
-        v = self._tracked_view()
+        v = self._tracked_view() if view is _UNSET else view
         if v is not None and v.unfinished:
             now = self.clock()
             if v.state == "waiting_quota" and v.wake_at is not None and now < v.wake_at:
@@ -210,8 +215,12 @@ class RunControl:
             return self.queue.head().series
         return self.view()[0] or ""
 
+    def tracked_series(self) -> str:
+        """The series whose saved job the header speaks about when nothing runs here."""
+        return self.last_series or self.view()[0] or ""
+
     def _tracked_view(self):
-        path = self.last_series or self.view()[0]
+        path = self.tracked_series()
         if not path:
             return None
         try:
@@ -331,6 +340,10 @@ class RunControl:
         if run.kind == "sample":
             if ev.kind == "error":
                 run.last_error = str((ev.data or {}).get("message", ""))
+            elif ev.kind == "progress":
+                d = ev.data or {}
+                run.sample = (int(d.get("done", 0)), int(d.get("total", 0)))
+                self._throttle.mark(urgent=False)
             return
         wake = run.events.feed(ev)
         if wake:
@@ -590,7 +603,7 @@ class RunControl:
         r.user_stop = True
         r.handle.stop()
         self.sink.runs_changed()
-        self._close_timer = self.timer(CLOSE_CAP_MS, self._finish_close)
+        self._close_timer = self.timer(self.close_cap_ms, self._finish_close)
         return False
 
     def _closing_done(self) -> bool:

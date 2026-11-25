@@ -21,6 +21,7 @@ FocusScope {
     property alias actionButton: actionBtn
     signal closeRequested()
     signal accepted()
+    signal cancelled()                      // the closing BUTTON was pressed (Esc and a click outside only close)
 
     anchors.fill: parent
     visible: false
@@ -35,6 +36,10 @@ FocusScope {
             return
         visible = false
         closeRequested()
+    }
+    function cancel() {
+        cancelled()
+        close()
     }
     function accept() {
         if (actionText !== "" && actionEnabled)
@@ -79,6 +84,7 @@ FocusScope {
 
             AppText {
                 id: head
+                objectName: panel.objectName + "Title"
                 width: parent.width
                 height: panel.title !== "" ? implicitHeight + 14 : 0
                 visible: panel.title !== ""
@@ -113,7 +119,7 @@ FocusScope {
                     anchors.left: parent.left
                     text: panel.closeText
                     kind: "flat"
-                    onClicked: panel.close()
+                    onClicked: panel.cancel()
                 }
                 Pill {
                     id: actionBtn

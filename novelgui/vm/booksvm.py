@@ -293,6 +293,13 @@ class BooksVM(QObject):
         self._load_timer.start()
         self.session.open_book(self._path, self._book)
 
+    def refresh_book(self) -> None:
+        """Read the open book's chapter states again (a job or a resolved block changed the logs): the selection stays
+        (it is restored from the memo when the skeleton arrives)."""
+        if self._view == "chapters" and self._path and self._book:
+            self._push_selection()
+            self.session.open_book(self._path, self._book)
+
     def _show_skeleton(self) -> None:
         if self.chapter_model.rowCount() == 0 and self._view == "chapters":
             self._loading_chapters = True

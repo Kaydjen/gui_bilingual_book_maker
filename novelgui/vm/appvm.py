@@ -2,8 +2,8 @@
 library not found), closing and the tray, notifications, window memory, the focus-rescan hook.
 
 QML only binds to it. The rules are in ctl/shellrules.py (pure); what the OS does (hide, show, exit) is handed in as
-callbacks so the same object runs in tests with fakes. Run state is fed by `setRun` (fake data now; step 7 sends the
-RunSnapshot of the real jobs).
+callbacks so the same object runs in tests with fakes. Run state comes from the real RunControl through
+`set_run_info` (the Translate view-model builds it with ctl/runinfo); `setRun` stays for scenes that feed fake data.
 """
 
 from __future__ import annotations
@@ -67,6 +67,7 @@ class AppVM(QObject):
         self.rescan = lambda: None                  # 14.7: BooksSession.rescan once step 5 has one
         self.rescan_calls = 0
         self._run = sr.RunInfo()
+        self._quitting = False
         self._terms_scan = -1.0
         self._panel = ""
         self._panel_data: dict = {}
@@ -264,11 +265,23 @@ class AppVM(QObject):
 
     @Slot("QVariantMap")
     def setRun(self, data):
-        """Fake data now, the RunSnapshot of the jobs at step 7."""
+        """Fake run data for scenes and tests; the real app uses `set_run_info`."""
         fields = {k: v for k, v in dict(data).items() if k in sr.RunInfo.__dataclass_fields__}
-        self._run = sr.RunInfo(**fields)
+        self.set_run_info(sr.RunInfo(**fields))
+
+    def set_run_info(self, info: sr.RunInfo) -> None:
+        """The state of the jobs as the shell shows it: the header word and pulses, the tray lines, the closing panel,
+        Books' `working during a run`, the red pulse of Terms."""
+        if info == self._run:
+            return
+        self._run = info
         self.runChanged.emit()
         self._sync_tray()
+
+    def run_closed(self) -> None:
+        """RunControl has finished closing (the requests in flight ended): the panel of 9.11 completes the quit."""
+        if self._panel == "closing" and not self._quitting:
+            self.quitNow()
 
     @property
     def run(self) -> sr.RunInfo:
@@ -350,7 +363,15 @@ class AppVM(QObject):
         elif what == "hide_first":
             self._open_panel("trayFirst")
         else:
-            self._open_panel("closing", sr.closing_panel(self._run))
+            self._open_closing()
+
+    def _open_closing(self) -> None:
+        """The 9.11 / 14.6 panel; while a run is going the stop begins as the panel opens, the app closes when the
+        answers are saved (or `Close now`)."""
+        data = sr.closing_panel(self._run)
+        self._open_panel("closing", data)
+        if data["kind"] == "running":
+            self.stopRequested.emit()
 
     @Slot()
     def hideToTray(self):
@@ -363,6 +384,7 @@ class AppVM(QObject):
     @Slot()
     def quitNow(self):
         """`Quit`, `Close now`, `Close`: the run is told to stop first (RunControl at step 7), then the app ends."""
+        self._quitting = True
         if self._run.busy:
             self.stopRequested.emit()
         self.flush()
@@ -375,7 +397,7 @@ class AppVM(QObject):
         if sr.quit_decision(self._run) == "quit":
             self.quitNow()
         else:
-            self._open_panel("closing", sr.closing_panel(self._run))
+            self._open_closing()
 
     # ------------------------------------------------------------- the tray (14.24)
     def _sync_tray(self) -> None:
@@ -401,7 +423,7 @@ class AppVM(QObject):
                 self.quitNow()
             else:
                 self.show_window()
-                self._open_panel("closing", sr.closing_panel(self._run))
+                self._open_closing()
         self.visibleChanged.emit()
 
     def bring_forward(self, route: str = "") -> None:
