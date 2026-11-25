@@ -30,6 +30,7 @@ from .checks import fresh_marks
 
 HAS_CHAPTERS = "chapters" in inspect.signature(core_job.Job.__init__).parameters
 HAS_GATE_FOR = callable(getattr(core_frontier, "gate_for", None))
+SAMPLE_STEP = 50                                  # blocks `Next 50` adds to a sample
 SeriesBusy = core_job.SeriesBusy
 
 
@@ -206,10 +207,15 @@ def _relay(ctx, events):
     return fold
 
 
-def sample_task(ctx, handle: RunHandle, series_path, book: str, chapter: int, blocks: int, cfg: RunConfig):
-    """Translate the first blocks of one chapter into samples/ (never gated, never written to chapters/)."""
+def sample_task(ctx, handle: RunHandle, series_path, book: str, chapter: int, blocks: int, cfg: RunConfig,
+                keep: bool = False):
+    """Translate the first blocks of one chapter into samples/ (never gated, never written to chapters/).
+    `keep`: `Next 50`: `blocks` is how many blocks the sample already covers; the sample log is NOT cleared and the run goes
+    on to max(blocks, records in the log) + SAMPLE_STEP blocks (the core skips the blocks that are done, `Runner._chapter`)."""
     series = Series.open(series_path)
     try:
+        if keep:
+            blocks = _keep_log(series, book, chapter, blocks) + SAMPLE_STEP
         r = Runner(series, book, cfg.keys, cfg.models, state_path=series.path / ".state" / "pool.json",
                    base_url=cfg.base_url, pace=cfg.pace, end_on_quota=True, gate=None)
         r.listener = lambda ev: ctx.emit(("event", ev))
@@ -221,13 +227,24 @@ def sample_task(ctx, handle: RunHandle, series_path, book: str, chapter: int, bl
         handle.finished.set()
 
 
-def sample_rows(series_path, book: str, chapter: int, n: int) -> list:
-    """[(source text, translation or None, reason)] of the first n blocks of a sampled chapter."""
+def _keep_log(series, book: str, chapter: int, covered: int) -> int:
+    """Make `Runner.sample` keep the log it finds (it calls `log.clear()` on the log the series hands out): the log of this
+    chapter gets a clear() that does nothing for the life of this Series object. Returns how many blocks the log covers."""
+    with series.open_book(book) as b:
+        log = series.sample_log(book, b.chapters[chapter])
+    log.clear = lambda: None
+    return max(covered, len(log.records()))
+
+
+def sample_rows(series_path, book: str, chapter: int, n: int, total: bool = False):
+    """[(source text, translation or None, reason)] of the first n blocks of a sampled chapter; with `total` also how many
+    blocks the chapter has: (rows, total)."""
     series = Series.open(series_path)
     with series.open_book(book) as b:
         ch = b.chapters[chapter]
         log = ChapterLog(series.sample_log(book, ch).path)
         rows = []
+        count = len(b.blocks(ch))
         for blk in b.blocks(ch)[:n]:
             rec = log.lookup(blk.index, blk.sha)
             src = " ".join(strip_markers(blk.text).split())
@@ -237,5 +254,5 @@ def sample_rows(series_path, book: str, chapter: int, n: int) -> list:
                 rows.append((src, " ".join(strip_markers(rec["text"]).split()), ""))
             else:
                 rows.append((src, None, str(rec.get("reason") or "failed")))
-        return rows
+        return (rows, count) if total else rows
 

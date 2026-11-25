@@ -281,7 +281,7 @@ class RunControl:
         self._changed()
         return ""
 
-    def start_sample(self, series_path: str, book: str, chapter: int, blocks: int) -> str:
+    def start_sample(self, series_path: str, book: str, chapter: int, blocks: int, keep: bool = False) -> str:
         if self.closing:
             return "The window is closing."
         if self.run is not None:
@@ -303,7 +303,7 @@ class RunControl:
         self.run = run
         self.sink.runs_changed(starting=True)
         self.submit(
-            lambda ctx, h=run.handle: frun.sample_task(ctx, h, series_path, book, chapter, blocks, cfg),
+            lambda ctx, h=run.handle: frun.sample_task(ctx, h, series_path, book, chapter, blocks, cfg, keep),
             on_item=lambda item, r=run: self._on_item(r, item),
             on_result=lambda res, r=run: self._done(r, res),
             on_error=lambda exc, r=run: self._failed(r, exc), lane="run")
