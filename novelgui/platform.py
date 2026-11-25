@@ -39,13 +39,9 @@ def dark_titlebar(win) -> None:
 
 
 def default_data_dir():
-    from pathlib import Path
-    import os
-    if IS_WINDOWS:
-        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
-    else:
-        base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "novelgui"
+    """The settings folder of the program (the one place that builds it is runtime/paths.py)."""
+    from .runtime import paths
+    return paths.default_settings_dir()
 
 
 def write_png(path, w: int, h: int, rgb: bytes) -> None:
@@ -194,3 +190,45 @@ def keep_awake(on: bool) -> None:
         ctypes.windll.kernel32.SetThreadExecutionState(flags)
     except Exception:
         pass
+
+
+def allow_set_foreground(pid: int) -> None:
+    """Let the process with this id take the foreground (a second start hands it to the first window)."""
+    if not IS_WINDOWS or not pid:
+        return
+    try:
+        import ctypes
+        ctypes.windll.user32.AllowSetForegroundWindow(int(pid))
+    except Exception:
+        pass
+
+
+def flash_window(hwnd: int) -> bool:
+    """Flash the taskbar button until the window is active (FlashWindowEx). False off Windows or on failure."""
+    if not IS_WINDOWS or not hwnd:
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class FLASHWINFO(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.UINT), ("hwnd", wintypes.HWND), ("dwFlags", wintypes.DWORD),
+                        ("uCount", wintypes.UINT), ("dwTimeout", wintypes.DWORD)]
+
+        info = FLASHWINFO(ctypes.sizeof(FLASHWINFO), hwnd, 0x3 | 0xC, 0, 0)   # FLASHW_ALL | FLASHW_TIMERNOFG
+        ctypes.windll.user32.FlashWindowEx(ctypes.byref(info))
+        return True
+    except Exception:
+        return False
+
+
+def message_box(text: str, title: str = "Novel") -> bool:
+    """A modal error box on Windows. False elsewhere (the caller falls back to stderr)."""
+    if not IS_WINDOWS:
+        return False
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, text, title, 0x10)
+        return True
+    except Exception:
+        return False

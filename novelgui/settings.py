@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 
-from .platform import default_data_dir
+from .runtime import paths
 
 ENV_DATA = "NOVELGUI_DATA"
 ENV_API_BASE = "NOVELGUI_API_BASE"      # test hook: base URL of the translation service
@@ -16,8 +16,7 @@ FILE_NAME = "settings.json"
 
 
 def data_dir() -> Path:
-    env = os.environ.get(ENV_DATA)
-    return Path(env) if env else default_data_dir()
+    return paths.settings_dir()
 
 
 def api_base() -> str | None:
