@@ -31,12 +31,12 @@ class TitleNumbers(unittest.TestCase):
         self.assertEqual(r.indices, (3, 4, 5))
         self.assertFalse(r.by_position)
 
-    def test_repeated_number_falls_back_to_position(self):
+    def test_repeated_number_takes_every_chapter_in_the_range(self):
         numbers = [1, 2, 2, 3, 4]
         toc = [False] * 5
         r = cl.select_by_numbers("2-3", numbers, toc)
-        self.assertTrue(r.by_position)
-        self.assertEqual(r.indices, (1, 2, 3))      # typed 2 = shown number 2 = index 1
+        self.assertFalse(r.by_position)
+        self.assertEqual(r.indices, (1, 2, 3))
 
     def test_missing_number_and_errors(self):
         numbers = [1, 2, 3]
@@ -44,21 +44,26 @@ class TitleNumbers(unittest.TestCase):
         self.assertEqual(cl.select_by_numbers("1-2", numbers, toc).indices, (0, 1))
         self.assertTrue(cl.select_by_numbers("50", numbers, toc).error)
         self.assertTrue(cl.select_by_numbers("x", numbers, toc).error)
+        # a number that does not exist is simply not in the selection
+        r = cl.select_by_numbers("2-20", numbers, toc)
+        self.assertEqual(r.indices, (1, 2))
+        self.assertEqual(r.note, "2 chapters")
 
     def test_toc_never_selected(self):
         numbers = [None, None, 2]
         toc = [True, False, False]
         r = cl.select_by_numbers("1-2", numbers, toc)
         self.assertNotIn(0, r.indices)
-        self.assertEqual(r.indices, (1, 2))
+        self.assertEqual(r.indices, (2,))           # chapter 1 has no title number: not in the selection
 
     def test_display_numbers_are_one_based(self):
         self.assertEqual(cl.display_no(0), 1)
         self.assertEqual(cl.from_display(cl.display_no(41)), 41)
         r = cl.select_by_numbers("3-4", [None] * 6, [False] * 6)
         self.assertEqual(r.indices, (2, 3))
-        self.assertIn("3 to 4", r.note)
-        self.assertEqual(cl.select_by_numbers("0", [None] * 6, [False] * 6).error, "no such chapter: 0")
+        self.assertTrue(r.by_position)
+        self.assertEqual(r.note, "2 chapters")
+        self.assertTrue(cl.select_by_numbers("0", [None] * 6, [False] * 6).error)
 
 
 class States(unittest.TestCase):
@@ -104,12 +109,6 @@ class SelectionModel(unittest.TestCase):
         self.assertEqual(s.spans(), [(3, 5), (9, 9)])
         self.assertEqual(len(s), 4)
         self.assertFalse(selection.Selection())
-
-    def test_summary(self):
-        s = selection.make("b", [1, 2])
-        self.assertEqual(selection.summary(s, 2, 1204), "2 chapters · 1 204 blocks")
-        self.assertEqual(selection.summary(selection.Selection(), 0, 0), "")
-        self.assertIn("+", selection.summary(s, 2, 10, complete=False))
 
 
 class SettingsFile(unittest.TestCase):

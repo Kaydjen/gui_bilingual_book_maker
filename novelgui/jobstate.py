@@ -26,6 +26,7 @@ class JobView:
     wake_at: float | None = None
     error: str = ""
     foreign: bool = False         # a live process other than this window works on the series
+    dead: tuple = ()              # reasons of the key/model pairs the pool holds as dead (`invalid key`, ...)
 
     @property
     def unfinished(self) -> bool:
@@ -198,6 +199,18 @@ class Problem:
     sha: str
     source: str
     reason: str
+    kind: str = "failed"        # failed | a check kind (findingrules.LABELS)
+    text: str = ""              # the translation a finding was made on
+    tkey: str = ""              # its digest (findingrules.text_key)
+    detail: str = ""            # what the check saw, in words
+
+    @property
+    def is_finding(self) -> bool:
+        return self.kind != "failed"
+
+    def mark(self) -> tuple:
+        """What a retry needs to rebuild the finding at the start: chapter, block, source hash, text digest."""
+        return (self.chapter, self.block, self.sha, self.tkey)
 
 
 def assemble_problems(chapter: int, title: str, blocks, lookup) -> list[Problem]:

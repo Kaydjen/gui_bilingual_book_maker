@@ -4,14 +4,27 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from . import termlogic, termtips
+from . import termlogic, termtips, tips
 from .chapterlogic import display_no
 from .terms_const import FIELD_OF, OTHER, QUESTION_COL, TYPES
 from .theme import ACCENT, BRIGHT, DIM, FAINT, S2, S4, TEXT
 from .vtable import Col, VTable
 
+DASH = "—"
 EDITABLE = ["tr", "type", "gender", "note"]
 GENDER_ORDER = ["male", "female", "neuter", "plural", "unknown"]
+
+
+def empty_type(t) -> bool:
+    return not (t.type or "").strip()
+
+
+def empty_gender(t) -> bool:
+    return (t.gender or "") in ("", "unknown")
+
+
+def empty_note(t) -> bool:
+    return not (t.note or "").strip()
 
 
 class TermsTable(VTable):
@@ -26,6 +39,21 @@ class TermsTable(VTable):
         self.edit = None
         self.sort_key = "count"
         self.sort_desc = True
+        self.language_set = True       # False while the series has no target language: heading `To ▾`, cells `—`
+        self.head_red = False          # the heading carries the one red of the screen
+        self.on_language = None        # (x_root, y_root) when the heading `To ▾` is clicked
+
+    def head_colour(self, col, active):
+        if col.key == "tr" and self.head_red:
+            return ACCENT
+        return super().head_colour(col, active)
+
+    def _head_click(self, e):
+        if not self.language_set and self.col_at(e.x) == "tr" and not self._head_hit_border(e.x):
+            if self.on_language:
+                self.on_language(e.x_root, self.head.winfo_rooty() + self.head.winfo_height())
+            return
+        super()._head_click(e)
 
     # ---- cells
     def draw_cells(self, c, t, cols, y, mid):
@@ -37,7 +65,7 @@ class TermsTable(VTable):
                       fill=DIM if getattr(t, "suggest", False) else TEXT)
         used = f.measure(s)
         if "same_as" in t.questions:
-            c.create_text(x + self.pad + used, y + mid, text=" ?", anchor="w", font=f, fill=ACCENT)
+            c.create_text(x + self.pad + used, y + mid, text=" ?", anchor="w", font=f, fill=BRIGHT)
             used += f.measure(" ?")
         if t.forms:
             used += self.cw
@@ -46,20 +74,27 @@ class TermsTable(VTable):
                 c.create_text(x + self.pad + used, y + mid, text=self.fit("= " + ", ".join(t.forms), room),
                               anchor="w", font=f, fill=FAINT)
         x, w = cols["tr"]
-        if "tr" in t.questions:
+        if not self.language_set:
+            self._draw_dash(c, x, y + mid)
+        elif "tr" in t.questions:
             self._draw_question(c, x, y + mid, w, t.tr, BRIGHT)
         else:
             c.create_text(x + self.pad, y + mid, text=self.fit(t.tr, w - 2 * self.pad), anchor="w", font=f,
                           fill=BRIGHT)
         x, w = cols["type"]
         if not cand:
-            c.create_text(x + self.pad, y + mid, text=t.type, anchor="w", font=f, fill=DIM)
+            if empty_type(t):
+                self._draw_dash(c, x, y + mid)
+            else:
+                c.create_text(x + self.pad, y + mid, text=t.type, anchor="w", font=f, fill=DIM)
         x, w = cols["gender"]
         mark = self.marks.get(t.gender, "?")
         if cand:
             pass
         elif "gender" in t.questions:
             self._draw_question(c, x, y + mid, w, mark, DIM)
+        elif empty_gender(t):
+            self._draw_dash(c, x, y + mid)
         else:
             c.create_text(x + self.pad, y + mid, text=mark, anchor="w", font=f, fill=DIM)
         x, w = cols["first"]
@@ -69,10 +104,18 @@ class TermsTable(VTable):
         x, w = cols["count"]
         c.create_text(x + w - self.pad, y + mid, text=str(t.count), anchor="e", font=f, fill=DIM if t.count else FAINT)
         x, w = cols["note"]
-        c.create_text(x + self.pad, y + mid, text=self.fit(t.note, w - 2 * self.pad), anchor="w", font=f, fill=FAINT)
+        if empty_note(t) and not cand:
+            self._draw_dash(c, x, y + mid)
+        else:
+            c.create_text(x + self.pad, y + mid, text=self.fit(t.note or "", w - 2 * self.pad), anchor="w", font=f,
+                          fill=FAINT)
+
+    def _draw_dash(self, c, x, ymid):
+        """A value that is not known yet: a dim dash (its tooltip says who fills it in)."""
+        c.create_text(x + self.pad, ymid, text=DASH, anchor="w", font=self.font, fill=FAINT)
 
     def _draw_question(self, c, x, ymid, w, shown, fg):
-        """Doubtful value: the value in use followed by an accent '?'."""
+        """Doubtful value: the value in use followed by a bright '?' (a marker of the data, not the screen's red)."""
         f = self.font
         avail = w - 2 * self.pad
         q = f.measure(" ?")
@@ -80,7 +123,7 @@ class TermsTable(VTable):
         x0 = x + self.pad
         if s:
             c.create_text(x0, ymid, text=s, anchor="w", font=f, fill=fg)
-        c.create_text(x0 + f.measure(s), ymid, text=" ?" if s else "?", anchor="w", font=f, fill=ACCENT)
+        c.create_text(x0 + f.measure(s), ymid, text=" ?" if s else "?", anchor="w", font=f, fill=BRIGHT)
 
     # ---- tooltips
     def tip_body(self, e):
@@ -91,11 +134,18 @@ class TermsTable(VTable):
         if i is None:
             return None
         t = self.rows[i]
+        if col == "tr" and not self.language_set:
+            return tips.TERMS_TO_HEAD
         field = FIELD_OF.get(col)
         if col in QUESTION_COL.values():
             qf = next((f for f, c in QUESTION_COL.items() if c == col), None)
             if qf in t.questions:
                 return termtips.question_tip(t, qf, self.marks)
+        if not getattr(t, "cand", False) and (
+                (col == "type" and empty_type(t)) or
+                (col == "gender" and empty_gender(t) and "gender" not in t.questions) or
+                (col == "note" and empty_note(t))):
+            return tips.UNKNOWN_FIELD
         if col == "gender":
             word = termtips.GENDER_WORDS.get(t.gender, t.gender)
             return "%s: %s" % (self.marks.get(t.gender, "?"), word)
@@ -113,6 +163,8 @@ class TermsTable(VTable):
         return None
 
     def tip_head(self, e):
+        if not self.language_set and self.col_at(e.x) == "tr":
+            return tips.TERMS_TO_HEAD
         return termtips.head_tip(self.col_at(e.x))
 
     def copy_text(self, rows) -> str:
@@ -155,6 +207,8 @@ class TermsTable(VTable):
 
     def start_edit(self, i, col, bypass=False):
         term = self.rows[i] if 0 <= i < len(self.rows) else None
+        if col == "tr" and not self.language_set:
+            return              # the rendering is written in the target language: choose it first
         self.close_edit(commit=True)
         if term is not None:
             i = self.index_of(term)

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import time
 import tkinter as tk
 
 from . import theme as T
 from .platform import KEYCODES
-from .theme import ACCENT, ACCENT_HOVER, BG, BRIGHT, DIM, FAINT, S1, S2, S3, S4, TEXT
+from .theme import ACCENT, ACCENT_HOVER, BG, BRIGHT, DIM, FAINT, FLASH, S1, S2, S3, S4, TEXT
 
 
 def rrect(c, x1, y1, x2, y2, r, **kw):
@@ -34,14 +35,29 @@ class Pill(tk.Canvas):
         self.w = font.measure(text) + 2 * self.px
         self.h = ls + 2 * self.py
         super().__init__(master, width=self.w, height=self.h, bg=bg, highlightthickness=0, bd=0, cursor="hand2")
+        self.taborder = True            # Tab reaches the button; Enter or Space presses it (keyboard.py)
+        self.focused = False
         self.bind("<Enter>", lambda e: self._set_hover(True))
         self.bind("<Leave>", lambda e: self._set_hover(False))
         self.bind("<ButtonRelease-1>", self._click)
+        self.bind("<FocusIn>", lambda e: self._set_focus(True))
+        self.bind("<FocusOut>", lambda e: self._set_focus(False))
+        self.bind("<Return>", self._key)
+        self.bind("<space>", self._key)
         self.draw()
 
     def _set_hover(self, v):
         self.hover = v
         self.draw()
+
+    def _set_focus(self, v):
+        self.focused = v
+        self.draw()
+
+    def _key(self, e):
+        if self.enabled:
+            self.command()
+        return "break"
 
     def _click(self, e):
         if self.enabled and 0 <= e.x < self.w and 0 <= e.y < self.h:
@@ -79,6 +95,9 @@ class Pill(tk.Canvas):
             rest = S3 if self.base == S2 else S2
             fill, fg = (S4 if self.hover else (S3 if self.on else rest)), (BRIGHT if self.on else TEXT)
         rrect(self, 0, 0, self.w, self.h, self.h * 0.28, fill=fill, outline="")
+        if self.focused and self.enabled:
+            rrect(self, 1, 1, self.w - 1, self.h - 1, self.h * 0.28, fill="", outline=BRIGHT if self.kind != "accent"
+                  else "#ffffff", width=2)
         self.create_text(self.w / 2, self.h / 2, text=self.text, fill=fg, font=self.font)
 
 
@@ -101,9 +120,29 @@ class Segmented(tk.Canvas):
         self.boxes = []
         self.enabled = True
         super().__init__(master, height=self.h, bg=bg, highlightthickness=0, bd=0, cursor="hand2")
+        self.taborder = True            # Tab reaches the switch; Left and Right change the choice
+        self.focused = False
         self.bind("<Button-1>", self._click)
         self.bind("<Motion>", self._motion)
         self.bind("<Leave>", lambda e: self._motion(None))
+        self.bind("<FocusIn>", lambda e: self._set_focus(True))
+        self.bind("<FocusOut>", lambda e: self._set_focus(False))
+        self.bind("<Left>", lambda e: self._arrow(-1))
+        self.bind("<Right>", lambda e: self._arrow(1))
+
+    def _set_focus(self, v):
+        self.focused = v
+        self.draw()
+
+    def _arrow(self, d):
+        keys = [it[0] for it in self.items]
+        if self.enabled and self.value in keys:
+            nxt = keys[max(0, min(len(keys) - 1, keys.index(self.value) + d))]
+            if nxt != self.value:
+                self.value = nxt
+                self.draw()
+                self.on_change(nxt)
+        return "break"
 
     def set_items(self, items, value=None):
         self.items = items
@@ -162,7 +201,7 @@ class Segmented(tk.Canvas):
         total = x + inset
         self.boxes = boxes
         self.configure(width=total)
-        rrect(self, 0, 0, total, self.h, self.h * 0.28, fill=S2, outline="")
+        rrect(self, 0, 0, total, self.h, self.h * 0.28, fill=S2, outline=FAINT if self.focused else "")
         for i, (key, label, cnt, *rest) in enumerate(self.items):
             a, b, wl, wc = spans[i]
             hot = bool(rest and rest[0])
@@ -189,10 +228,58 @@ class Segmented(tk.Canvas):
                                      text="\u00b7 %s" % rest[1], anchor="w", font=f, fill=FAINT)
 
 
-class Field(tk.Canvas):
-    """A one-line text field on a rounded surface; `icon` adds the magnifier and a clear cross."""
+class DotsButton(tk.Canvas):
+    """Icon-only `...` control (actions of a row or a volume). Brighter on hover, never darker than the window."""
 
-    def __init__(self, master, font, on_change=None, on_submit=None, icon=False, bg=BG, width=None, surface=S2):
+    def __init__(self, master, size, command, bg=BG):
+        super().__init__(master, width=size, height=size, bg=bg, highlightthickness=0, bd=0, cursor="hand2")
+        self.size, self.command, self.hover, self.enabled = size, command, False, True
+        self.bind("<Enter>", lambda e: self._set(True))
+        self.bind("<Leave>", lambda e: self._set(False))
+        self.bind("<ButtonRelease-1>", self._click)
+        self.draw()
+
+    def _set(self, v):
+        self.hover = v
+        self.draw()
+
+    def _click(self, e):
+        if self.enabled and 0 <= e.x < self.size and 0 <= e.y < self.size:
+            self.command(e)
+
+    def set_enabled(self, v):
+        if v != self.enabled:
+            self.enabled = v
+            self.configure(cursor="hand2" if v else "arrow")
+            self.draw()
+
+    def draw(self):
+        self.delete("all")
+        fg = FAINT if not self.enabled else (BRIGHT if self.hover else DIM)
+        r = max(1.5, self.size * 0.075)
+        cy = self.size / 2
+        for k in (-1, 0, 1):
+            cx = self.size / 2 + k * self.size * 0.26
+            self.create_oval(cx - r, cy - r, cx + r, cy + r, fill=fg, outline="")
+
+
+class Field(tk.Canvas):
+    """A one-line text field on a rounded surface; `icon` adds the magnifier and a clear cross.
+
+    Behaviour of every field (window_spec 9.3, 9.4, 9.8):
+    - Enter commits the value and leaves the field; a click anywhere outside does the same.
+    - Esc puts back the value the field had when it was entered and leaves it (it never clears).
+    - `on_commit(value)` takes a value; it returns False (or raises ValueError) when the value is not allowed:
+      the field then shows the previous value again and flashes once.
+    - `on_submit(value)` is the Enter action of a field that adds or starts something; it runs after a
+      successful commit, on Enter only.
+    """
+
+    focused_field = None            # the Field whose entry has the keyboard focus
+    FLASH_MS = 160
+
+    def __init__(self, master, font, on_change=None, on_submit=None, icon=False, bg=BG, width=None, surface=S2,
+                 on_commit=None):
         self.font = font
         self.surface = surface
         ls = font.metrics("linespace")
@@ -200,8 +287,11 @@ class Field(tk.Canvas):
         self.var = tk.StringVar()
         self.on_change = on_change
         self.on_submit = on_submit
+        self.on_commit = on_commit
         self.icon = icon
         self.focused = False
+        self.base = ""              # the committed value: what Esc and an invalid entry go back to
+        self.flashing = False
         super().__init__(master, height=self.h, bg=bg, highlightthickness=0, bd=0)
         if width:
             self.configure(width=width)
@@ -213,15 +303,18 @@ class Field(tk.Canvas):
         self.var.trace_add("write", lambda *a: self._changed())
         self.entry.bind("<FocusIn>", lambda e: self._focus(True))
         self.entry.bind("<FocusOut>", lambda e: self._focus(False))
-        self.entry.bind("<Escape>", lambda e: self.clear())
-        self.entry.bind("<Return>", lambda e: self._submit())
+        self.entry.bind("<Escape>", lambda e: self._escape())
+        self.entry.bind("<Return>", lambda e: self._enter())
         self.bind("<Configure>", lambda e: self.draw())
         self.bind("<Button-1>", self._click)
 
+    # ---- value
     def get(self) -> str:
         return self.var.get()
 
     def set(self, text: str) -> None:
+        """Programmatic value: it counts as the committed one."""
+        self.base = text
         self.var.set(text)
 
     def clear(self):
@@ -230,8 +323,64 @@ class Field(tk.Canvas):
     def set_enabled(self, v: bool) -> None:
         self.entry.configure(state="normal" if v else "disabled")
 
-    def _submit(self):
-        if self.on_submit:
+    # ---- commit, restore, leave
+    def commit(self, force: bool = False) -> bool:
+        """Take the typed value (Enter forces it even when unchanged). False, with the previous value back and
+        one flash, when it is not allowed."""
+        text = self.var.get()
+        if text == self.base and not force:
+            return True
+        ok = True
+        if self.on_commit:
+            try:
+                ok = self.on_commit(text) is not False
+            except ValueError:
+                ok = False
+        if ok:
+            self.base = self.var.get()      # the callback may have written the value in its canonical form
+            return True
+        self.var.set(self.base)
+        self.flash()
+        return False
+
+    def restore(self) -> None:
+        self.var.set(self.base)
+
+    def leave(self) -> None:
+        """Take the keyboard focus off the field (to the panel it sits in, else to the window)."""
+        try:
+            if self.entry.focus_get() is not self.entry:
+                return
+            w = self.master
+            while w is not None and not getattr(w, "is_panel", False):
+                w = getattr(w, "master", None)
+            (w if w is not None else self.winfo_toplevel()).focus_set()
+        except (tk.TclError, KeyError):
+            pass
+
+    def flash(self) -> None:
+        if self.flashing:
+            return
+        self.flashing = True
+        self.draw()
+
+        def end():
+            self.flashing = False
+            try:
+                self.draw()
+            except tk.TclError:
+                pass
+        self.after(self.FLASH_MS, end)
+
+    def _escape(self):
+        self.restore()
+        self.leave()
+        return "break"
+
+    def _enter(self):
+        ok = self.commit(force=True)
+        self.leave()
+        if ok and self.on_submit:
             self.on_submit(self.var.get())
         return "break"
 
@@ -242,6 +391,17 @@ class Field(tk.Canvas):
 
     def _focus(self, v):
         self.focused = v
+        if v:
+            Field.focused_field = self
+            self.base = self.var.get()
+        elif Field.focused_field is self:
+            Field.focused_field = None
+            # focus moved on by the keyboard: the typed value counts as entered
+            try:
+                if self.winfo_exists() and self.entry.winfo_exists():
+                    self.commit()
+            except tk.TclError:
+                pass
         self.draw()
 
     def _click(self, e):
@@ -249,11 +409,35 @@ class Field(tk.Canvas):
             self.clear()
         self.entry.focus_set()
 
+    @classmethod
+    def install(cls, root) -> None:
+        """One press handler for the window: a press outside the focused field commits it and leaves it."""
+        root.bind("<ButtonPress>", cls._press_outside, add="+")
+
+    @classmethod
+    def _press_outside(cls, e):
+        f = cls.focused_field
+        if f is None:
+            return
+        try:
+            under = f.winfo_containing(e.x_root, e.y_root)
+        except (KeyError, tk.TclError):
+            under = None
+        w = under
+        while w is not None:
+            if w is f or w is f.entry:
+                return
+            w = getattr(w, "master", None)
+        f.commit()
+        f.leave()
+
     def draw(self):
         W = max(self.winfo_width(), 50)
         H = self.h
         self.delete("shape")
-        rrect(self, 0, 0, W, H, H * 0.28, fill=self.surface, outline=S4 if self.focused else self.surface, tags="shape")
+        edge = FLASH if self.flashing else (S4 if self.focused else self.surface)
+        rrect(self, 0, 0, W, H, H * 0.28, fill=self.surface, outline=edge, width=2 if self.flashing else 1,
+              tags="shape")
         left = int(H * 0.45)
         right = int(H * 0.4)
         if self.icon:
@@ -285,6 +469,7 @@ class ListPopup(tk.Canvas):
         self.on_cancel = None
         self.open = False
         self.hints = {}
+        self.disabled = set()
         self.root = root
         self.openers = []
         self.watched = set()
@@ -304,8 +489,52 @@ class ListPopup(tk.Canvas):
         self.bind("<Return>", lambda e: self._pick(self.cur, 0))
         self.bind("<Tab>", lambda e: self._pick(self.cur, 1) or "break")
         self.bind("<Shift-Tab>", lambda e: self._pick(self.cur, -1) or "break")
-        self.bind("<Escape>", lambda e: self.close(cancel=True))
+        self.bind("<Escape>", lambda e: self._escape())
         self.bind("<FocusOut>", lambda e: self.after(60, self._lost))
+        self.prev_grab = None
+        self.opener_closed = None       # (time, opener) when a press on the opener closed the list
+
+    def _arm(self):
+        """After the event that opened the list is over: a press outside closes it, and the window behind is
+        shut off by a grab."""
+        if self.open:
+            self.armed = True
+            self._grab()
+
+    def _escape(self):
+        self.close(cancel=True)
+        return "break"
+
+    def _grab(self):
+        """While the list is open the window behind ignores clicks: a press outside is only seen here."""
+        try:
+            self.prev_grab = self.grab_current()
+        except (KeyError, tk.TclError):
+            self.prev_grab = None
+        try:
+            self.grab_set()
+        except tk.TclError:
+            self.after(15, self._grab_again)
+
+    def _grab_again(self):
+        if not self.open:
+            return
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
+
+    def _ungrab(self):
+        try:
+            self.grab_release()
+        except tk.TclError:
+            pass
+        prev, self.prev_grab = self.prev_grab, None
+        try:
+            if prev is not None and prev is not self and prev.winfo_exists():
+                prev.grab_set()
+        except tk.TclError:
+            pass
 
     def _lost(self):
         if self.open and self.focus_get() is not self:
@@ -340,11 +569,19 @@ class ListPopup(tk.Canvas):
             self.close(cancel=True)
 
     def _global_press(self, e):
-        if not self.open or not self.armed:
+        if not self.open:
+            self.opener_closed = None       # a new click: the one that closed the list is over
             return
-        w = e.widget
-        if w is self or w in self.openers:
+        if not self.armed:
             return
+        try:
+            under = self.winfo_containing(e.x_root, e.y_root)
+        except (KeyError, tk.TclError):
+            under = None
+        if under is self:
+            return
+        if under in self.openers:
+            self.opener_closed = (time.monotonic(), under)
         self.close(cancel=True)
 
     def _global_configure(self, e):
@@ -355,7 +592,11 @@ class ListPopup(tk.Canvas):
         r = self.root
         return (r.winfo_x(), r.winfo_y(), r.winfo_width(), r.winfo_height())
 
-    def show(self, root, x, y, w, items, cur, on_pick, on_cancel=None, labels=None, hints=None, openers=()):
+    def show(self, root, x, y, w, items, cur, on_pick, on_cancel=None, labels=None, hints=None, openers=(),
+             disabled=()):
+        oc, self.opener_closed = self.opener_closed, None
+        if oc is not None and time.monotonic() - oc[0] < 1.5 and oc[1] in openers:
+            return                  # the press on the opener just closed this list: a second click only closes it
         if self.open:
             self.close()
         self.openers = list(openers)
@@ -364,8 +605,9 @@ class ListPopup(tk.Canvas):
         self.inside = set()
         self.seen = False
         self.armed = False
-        self.after_idle(lambda: setattr(self, "armed", True))
+        self.after_idle(self._arm)
         self.hints = hints or {}
+        self.disabled = set(disabled)
         self.items = items
         self.labels = labels or {}
         self.cur = items.index(cur) if cur in items else 0
@@ -391,6 +633,7 @@ class ListPopup(tk.Canvas):
         if self.leave_job is not None:
             self.after_cancel(self.leave_job)
             self.leave_job = None
+        self._ungrab()
         self.place_forget()
         if cancel and self.on_cancel:
             self.on_cancel()
@@ -417,6 +660,8 @@ class ListPopup(tk.Canvas):
 
     def _pick(self, i, nxt):
         item = self.items[i]
+        if item in self.disabled:
+            return                  # a dim row does nothing; the list stays open
         cb = self.on_pick
         self.close()
         if cb:
@@ -430,7 +675,7 @@ class ListPopup(tk.Canvas):
             if i == self.cur:
                 rrect(self, 4, y, w - 4, y + self.rh, 5, fill=S4, outline="")
             self.create_text(int(self.rh * 0.5) + 4, y + self.rh / 2, text=self.labels.get(it, it), anchor="w",
-                             font=self.font, fill=BRIGHT if i == self.cur else TEXT)
+                             font=self.font, fill=FAINT if it in self.disabled else (BRIGHT if i == self.cur else TEXT))
             if self.hints.get(it):
                 self.create_text(w - int(self.rh * 0.5) - 4, y + self.rh / 2, text=self.hints[it], anchor="e",
                                  font=self.font, fill=DIM)

@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from . import chapterlogic as cl
-from . import jobstate
+from . import findingrules, jobstate
 from .dialog import Modal
 from .theme import ACCENT, BG, BRIGHT, DIM, FAINT, LINE, S1, S2, S4, TEXT
 from .tooltip import attach_tip
@@ -20,6 +20,12 @@ def dark_text(master, ui, height: int = 3, editable: bool = True, bg=S1, **kw) -
                 highlightbackground=LINE, highlightcolor=S4, wrap="word", height=height, padx=pad,
                 pady=int(ui.ls * 0.3), insertbackground=BRIGHT, insertwidth=2, selectbackground=S4,
                 selectforeground="#ffffff", undo=editable, **kw)
+    t.bind("<Tab>", lambda e: ui.keys.tab(1))           # Tab leaves a text, it never types a tab (10.7)
+    t.bind("<Shift-Tab>", lambda e: ui.keys.tab(-1))
+    try:
+        t.bind("<ISO_Left_Tab>", lambda e: ui.keys.tab(-1))
+    except tk.TclError:
+        pass
     return t
 
 
@@ -35,10 +41,16 @@ def set_text(t: tk.Text, text: str) -> None:
 class PromptEditor(Modal):
     """Name and text of a prompt. Save stores it in the prompt library and hands (name, text) to `on_save`."""
 
-    def __init__(self, ui, name: str, text: str, taken, on_save):
+    def __init__(self, ui, name: str, text: str, taken, on_save, series: str = ""):
         super().__init__(ui)
         self.on_save = on_save
         self.taken = taken          # callable(name) -> error text or ""
+        self.series = series        # key of the unsaved draft (the series folder); empty = no draft
+        self.orig = (name, text)
+        self._finished = False
+        draft = ui.winstate.prompt_draft(series) if series else None
+        if draft is not None and draft != self.orig:
+            name, text = draft
         f = ui.font
         pad, gap = self.pad, int(ui.ls * 0.6)
         body = self.body
@@ -49,14 +61,15 @@ class PromptEditor(Modal):
         self.name.set(name)
         tk.Label(body, text="Text", bg=S2, fg=DIM, font=f, anchor="w").pack(anchor="w", padx=pad, pady=(gap, 2))
         self.text = dark_text(body, ui, height=16, bg=S1)
-        self.text.configure(width=int(ui.cw * 0.9 * 12))
+        self.text.configure(width=76)           # characters: the same width in cw units at every scale
         self.text.pack(fill="both", expand=True, padx=pad)
         self.text.insert("1.0", text)
         row = tk.Frame(body, bg=S2)
         row.pack(fill="x", padx=pad, pady=(gap, 0))
         self.save_btn = Pill(row, "Save", self._save, f, kind="accent", bg=S2)
         self.save_btn.pack(side="right")
-        Pill(row, "Cancel", self.close, f, kind="dim", bg=S2).pack(side="right", padx=(0, gap // 2))
+        self.main = self.save_btn
+        Pill(row, "Cancel", self._cancel, f, kind="dim", bg=S2).pack(side="right", padx=(0, gap // 2))
         attach_tip(self.save_btn, ui.tip, lambda e: None if self.save_btn.enabled else (self._err or "Give the prompt a name."))
         attach_tip(self.text, ui.tip, lambda e: (
             "The instructions sent with every request. {language} is replaced by the series language.",
@@ -77,8 +90,27 @@ class PromptEditor(Modal):
         if not self.save_btn.enabled:
             return
         name, text = self.name.get().strip(), self.text.get("1.0", "end-1c")
+        self._finished = True
+        if self.series:
+            self.ui.winstate.clear_prompt_draft(self.series)
         self.close()
         self.on_save(name, text)
+
+    def _cancel(self):
+        """The Cancel button throws the edit away; Esc and a press outside keep it as a draft."""
+        self._finished = True
+        if self.series:
+            self.ui.winstate.clear_prompt_draft(self.series)
+        self.close()
+
+    def close(self):
+        if self.is_open and not self._finished and self.series:
+            cur = (self.name.get(), self.text.get("1.0", "end-1c"))
+            if cur != self.orig:
+                self.ui.winstate.set_prompt_draft(self.series, *cur)
+            else:
+                self.ui.winstate.clear_prompt_draft(self.series)
+        super().close()
 
 
 # ---------------------------------------------------------------- sample panes
@@ -227,16 +259,24 @@ class ProblemTable(VTable):
         p = self.rows[i]
         col = self.col_at(e.x)
         if col == "source":
+            if p.is_finding:
+                return (p.detail or findingrules.KIND_TIPS.get(p.kind, ""),
+                        [("Chapter", str(cl.display_no(p.chapter))), ("Block", str(cl.display_no(p.block))),
+                         ("Found by", "the check"), ("Translation", jobstate.shorten(p.text, 160))])
             return (p.source, [("Chapter", str(cl.display_no(p.chapter))), ("Block", str(cl.display_no(p.block))),
                                ("Reason", p.reason)])
         if col == "reason":
+            if p.is_finding:
+                return (findingrules.KIND_TIPS.get(p.kind, p.reason), [("Found by", "the check"),
+                                                                       ("Counts as", "translated")])
             return REASONS.get(p.reason, "The translation of this block was refused or unusable, even when sent alone.")
         return None
 
     def tip_head(self, e):
         c = self.col_at(e.x)
         if c == "reason":
-            return "Why the block could not be translated after it was sent alone."
+            return ("Why the block is listed: it could not be translated after it was sent alone, or the check found "
+                    "something suspicious in its translation.")
         if c == "block":
             return "The position of the block in its chapter, counting from 1."
         return None
@@ -254,12 +294,13 @@ REASONS = {
 class ProblemsPanel(tk.Frame):
     """The failed blocks of the job's chapters, and what to do with them."""
 
-    def __init__(self, master, ui, retry, keep, save):
+    def __init__(self, master, ui, retry, keep, save, ignore=None):
         super().__init__(master, bg=BG)
         self.ui = ui
         self.problems: list = []
         self._enabled = True
-        self._retry, self._keep, self._save_cb = retry, keep, save
+        self._shown_text = None
+        self._retry, self._keep, self._save_cb, self._ignore = retry, keep, save, ignore
         head = tk.Frame(self, bg=BG)
         head.pack(fill="x", pady=(0, 2))
         tk.Label(head, text="Problems", bg=BG, fg=DIM, font=ui.font).pack(side="left")
@@ -285,14 +326,17 @@ class ProblemsPanel(tk.Frame):
         f = ui.font
         self.retry_btn = Pill(row, "Retry", self._do_retry, f)
         self.keep_btn = Pill(row, "Keep original", self._do_keep, f)
+        self.ignore_btn = Pill(row, "Ignore", self._do_ignore, f, kind="dim")
         self.save_btn = Pill(row, "Save", self._do_save, f)
         self.retry_btn.pack(side="left")
         self.keep_btn.pack(side="left", padx=(gap, 0))
+        self.ignore_btn.pack(side="left", padx=(gap, 0))
         self.save_btn.pack(side="right")
-        attach_tip(self.retry_btn, ui.tip, lambda e: (
-            "Translate these blocks again. The chapters that hold them are sent once more; blocks that are already "
-            "translated are skipped, so only failed blocks cost requests.",
-            [("Applies to", "chapters of the selected rows"), ("Uses", "requests of today")]))
+        attach_tip(self.retry_btn, ui.tip, lambda e: self._retry_tip())
+        attach_tip(self.ignore_btn, ui.tip, lambda e: (
+            "Hide the selected check findings. A finding comes back only when the translation of its block "
+            "changes. The blocks stay as they are.",
+            [("Applies to", "selected check findings"), ("Remembered in", "the series folder")]))
         attach_tip(self.keep_btn, ui.tip, lambda e: (
             "Put the original text into the book for the selected blocks. They count as translated.",
             [("Applies to", "selected rows"), ("Marked", "kept")]))
@@ -302,11 +346,28 @@ class ProblemsPanel(tk.Frame):
         attach_tip(self.typed, ui.tip, lambda e: "Type the translation of the selected block here.")
         self._update()
 
+    def _retry_tip(self):
+        if self._mixed():
+            return "Select failed blocks or check findings, not both: they are translated again in separate runs."
+        if any(p.is_finding for p in self.selected()):
+            return ("Translate the selected findings again. Only these blocks are sent. It starts like a "
+                    "translation: after the running one, or after you confirm replacing an unfinished job; until "
+                    "then the chapters stay as they are.",
+                    [("Applies to", "selected check findings"), ("Uses", "requests of today")])
+        return ("Translate these blocks again. The chapters that hold them are sent once more; blocks that are "
+                "already translated are skipped, so only failed blocks cost requests.",
+                [("Applies to", "chapters of the selected rows"), ("Uses", "requests of today")])
+
+    def _mixed(self) -> bool:
+        kinds = {p.is_finding for p in self.selected()}
+        return len(kinds) > 1
+
     def set_problems(self, problems) -> None:
         keep = {(p.chapter, p.block) for p in self.table.selected_rows()}
         self.problems = list(problems)
         self.table.set_rows(self.problems, {id(p) for p in self.problems if (p.chapter, p.block) in keep})
         self.count.configure(text=str(len(self.problems)))
+        self._shown_text = None
         self._selected()
 
     def set_accent(self, on: bool) -> None:
@@ -322,18 +383,32 @@ class ProblemsPanel(tk.Frame):
     def _selected(self):
         sel = self.table.selected_rows()
         set_text(self.source, sel[0].source if len(sel) == 1 else "")
+        key = (sel[0].chapter, sel[0].block, sel[0].kind) if len(sel) == 1 else None
+        if key != self._shown_text:
+            self._shown_text = key
+            if key is not None and sel[0].is_finding:       # a finding: the text it was made on, ready to edit
+                self.typed.configure(state="normal")
+                self.typed.delete("1.0", "end")
+                self.typed.insert("1.0", sel[0].text)
         self._update()
 
     def _update(self):
         n = len(self.table.selected_rows())
         on = self._enabled and n > 0
-        self.retry_btn.set_enabled(on)
+        sel = self.table.selected_rows()
+        self.retry_btn.set_enabled(on and not self._mixed())
         self.keep_btn.set_enabled(on)
+        self.ignore_btn.set_enabled(self._enabled and n > 0 and all(p.is_finding for p in sel))
         self.save_btn.set_enabled(self._enabled and n == 1 and bool(self.typed.get("1.0", "end-1c").strip()))
         self.typed.configure(state="normal" if self._enabled and n == 1 else "disabled")
 
     def _do_retry(self):
         self._retry(self.selected())
+
+    def _do_ignore(self):
+        sel = [p for p in self.selected() if p.is_finding]
+        if sel and self._ignore is not None:
+            self._ignore(sel)
 
     def _do_keep(self):
         self._keep(self.selected())

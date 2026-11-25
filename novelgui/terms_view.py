@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from . import model, termlogic
+from . import accent, langrules, model, pieces, termlogic, termsmemory, tips
 from .dialog import message
 from .reader import Reader
 from .step import Step
@@ -50,6 +50,11 @@ class TermsStep(Step):
         self.next_extra = 0
         self._virt: dict = {}
         self.dismissed: list = []
+        self._restoring = True      # while the remembered state is put back nothing is written
+        self._restore = None        # the remembered tab and sort, taken by the first load of a term base
+        self._want_next = False
+        self._remember_job = None
+        self.importing = ""         # "" or what the import is doing (`Importing…`, `Scanning…`)
 
         top = tk.Frame(self, bg=BG)
         top.pack(fill="x", pady=(0, gap))
@@ -57,8 +62,11 @@ class TermsStep(Step):
         self.seg.pack(side="left")
         self.type_btn = Pill(top, "All types  ▾", self._open_types, ui.font)
         self.type_btn.pack(side="right")
-        self.sel_btn = Pill(top, "In selection", self._toggle_selection, ui.font, kind="dim")
+        self.sel_btn = Pill(top, "Selected chapters", self._toggle_selection, ui.font, kind="dim")
         self.sel_btn.pack(side="right", padx=(0, gap // 2))
+        self.status = tk.Label(top, text="", bg=BG, fg=DIM, font=ui.font)   # `0` for a search with no result, `Scanning 40 %`
+        self.status.pack(side="right", padx=(0, gap // 2))
+        attach_tip(self.status, ui.tip, lambda e: self._status_tip())
         self.search = Field(top, ui.font, on_change=self._search_changed, icon=True)
         self.search.pack(side="left", fill="x", expand=True, padx=gap)
 
@@ -109,7 +117,7 @@ class TermsStep(Step):
         self.not_btn = Pill(foot, "Not a term", self.dismiss_candidates, ui.font)
         self.import_btn = Pill(foot, "Import", self.import_glossary, ui.font, kind="dim")
         self.export_btn = Pill(foot, "Export", self.export_base, ui.font, kind="dim")
-        self.confirm_btn = Pill(foot, "Confirm all", self.confirm_all, ui.font, kind="accent")
+        self.confirm_btn = Pill(foot, "Confirm all", self.confirm_all, ui.font)
         self.confirm_btn.pack(side="right")
         self.merge_btn.pack(side="left")
         self.del_btn.pack(side="left", padx=(gap // 2, 0))
@@ -127,19 +135,19 @@ class TermsStep(Step):
             "not in the term base yet.", [("Applies to", "selected rows"), ("Key", "N"), ("Undo", "yes, for 6 s")]))
         attach_tip(self.del_btn, tip, lambda e: (
             "Remove the selected terms from the base.", [("Applies to", "selected rows"), ("Undo", "yes, for 6 s")]))
-        attach_tip(self.confirm_btn, tip, lambda e: (
+        attach_tip(self.confirm_btn, tip, lambda e: tips.NEED_LANGUAGE if not self._lang_ok() else (
             "Mark every row shown here as checked. Rows with an open question are skipped; they stay for you "
             "to answer.", [("Applies to", "rows shown in New"), ("Skips", "rows with questions")]))
-        attach_tip(self.import_btn, tip, lambda e: (
+        attach_tip(self.import_btn, tip, lambda e: tips.TERMS_IMPORTING if self.importing else (
+            tips.NEED_LANGUAGE if not self._lang_ok() else (
             "Read your own glossary files, plain JSON with the English term and its translation. The terms "
             "become confirmed; a term that two files translate differently becomes a question.",
             [("Format", "{\"term\": \"translation\"}"), ("Terms become", "confirmed"),
-             ("Conflicts", "become questions")]))
+             ("Conflicts", "become questions")])))
         attach_tip(self.export_btn, tip, lambda e: (
             "Save the whole term base to a JSON file.", [("Format", "terms.json"), ("Contains", "every term")]))
         attach_tip(self.sel_btn, tip, lambda e: (
-            "Show only the terms that occur in the chapters selected on the Books step.",
-            [("Chapters", str(len(self.app.selection))), ("Applies to", "the list below")]))
+            tips.SELECTED_CHAPTERS, [("Chapters", str(len(self.app.selection))), ("Applies to", "the list below")]))
         attach_tip(self.type_btn, tip, lambda e: (
             "Show only terms of one type.", [("Types", "character, place, item ...")]))
 
@@ -153,22 +161,65 @@ class TermsStep(Step):
         t.on_edited = self._edited
         t.on_context = self._context_menu
         t.wire_tips()
+        t.on_language = lambda xr, yr: self.app.language_menu(xr, yr, openers=(t.head,))
         t.body.bind("<KeyPress>", self._key_press, add="+")
-        ui.root.bind("<Control-f>", lambda e: self._focus_search() if self.winfo_ismapped() else None, add="+")
+        ui.root.bind("<Control-f>", lambda e: self._focus_search() if self._keys_here() else None, add="+")
         ui.root.bind("<Control-z>", self._undo_key, add="+")
-        ui.root.bind("<Alt-Left>", lambda e: self.reader.step(-1) if self.winfo_ismapped() else None, add="+")
-        ui.root.bind("<Alt-Right>", lambda e: self.reader.step(1) if self.winfo_ismapped() else None, add="+")
+        ui.root.bind("<Alt-Left>", lambda e: self.reader.step(-1) if self._keys_here() else None, add="+")
+        ui.root.bind("<Alt-Right>", lambda e: self.reader.step(1) if self._keys_here() else None, add="+")
         self._set_default_order()
+        self._restore_memory()
+        t.on_widths = self._remember
         self._update_chrome()
+
+    # ------------------------------------------------------------- what is remembered (10.6)
+    def _restore_memory(self):
+        """Put back the type filter, the search text and the column widths now; the tab and the sort wait for the
+        first load of a term base (the Next tab also for the first scan)."""
+        tb = self.table
+        mem = termsmemory.clean(self.ui.winstate.get(termsmemory.KEY), [c.key for c in tb.cols], TYPES)
+        if "widths" in mem:
+            tb.set_widths_state(mem["widths"])
+        if "type" in mem:
+            self.type_filter = mem["type"]
+            self.type_btn.set_text(mem["type"] + "  ▾")
+            self.type_btn.pack_forget()
+            self.type_btn.pack(side="right", before=self.sel_btn)
+        if "query" in mem:
+            self.search.set(mem["query"])
+            self.query = mem["query"]
+        self._restore = {k: mem[k] for k in ("tab", "sort") if k in mem} or None
+        self._restoring = False
+
+    def _remember(self):
+        """Write the tab, filter, search, sort and widths of the table to the window state."""
+        if self._restoring:
+            return
+        if self._remember_job is not None:
+            self.after_cancel(self._remember_job)
+            self._remember_job = None
+        tb = self.table
+        mem = {"tab": self.tab, "type": self.type_filter or "", "query": self.query.strip() and self.query,
+               "widths": tb.widths_state(),
+               "sort": termsmemory.sort_to_store(self.tab, tb.sort_key, tb.sort_desc,
+                                                 termlogic.default_order(self.tab))}
+        self.ui.winstate.set(termsmemory.KEY, {k: v for k, v in mem.items() if v})
+
+    def _remember_later(self):
+        if self._remember_job is not None:
+            self.after_cancel(self._remember_job)
+        self._remember_job = self.after(500, self._remember)
 
     # ------------------------------------------------------------- life
     def on_show(self):
+        self._sync_language()
         self._load_if_needed()
         self.reader.reset_book(self.app.series.path if self.app.series else "", self.app.book)
         self._update_selection_state()
         self.after(10, lambda: (self._apply_frac(), self.table.body.focus_set()))
 
     def on_series(self):
+        self._sync_language()
         self._cancel_scan()
         self.fr, self._fr_key, self.next_rows, self.next_n, self._virt = None, None, [], None, {}
         self.dismissed = []
@@ -178,8 +229,7 @@ class TermsStep(Step):
         self.trash = []
         self._hide_undo()
         self.refilter()
-        if self.winfo_ismapped() or self.app.current == self.key:
-            self._load_if_needed()
+        self._load_if_needed()      # also while another step is shown: the header counts the terms (1.2)
 
     def on_book(self):
         self._ensure_frontier()
@@ -195,26 +245,66 @@ class TermsStep(Step):
     def shutdown(self):
         self.table.close_edit(commit=True)
 
+    def on_language(self):
+        """The language was chosen or changed: the base is read again for it (its renderings depend on it)."""
+        self.table.close_edit(commit=False)
+        if self._loaded_path is not None and self.doc is not None:
+            self._loaded_path = None
+            self.doc = None
+            self.entries = []
+            self.refilter(keep=set())
+        self._sync_language()
+        self._load_if_needed()
+
+    def _lang_ok(self) -> bool:
+        return not self.app.language_pending()
+
+    def _sync_language(self):
+        """Heading `To ▾` (red while nothing is chosen, the one red of the screen) or the language name."""
+        tb = self.table
+        lang = self.app.series_language()
+        tb.language_set = not self.app.language_pending()
+        tb.head_red = accent.gets_accent(accent.LANGUAGE, self.app.accent_facts("terms"))
+        tb.cols[1].label = "To  ▾" if not tb.language_set else (model.target_label(lang) if lang else
+                                                                 model.target_label("ru:Russian"))
+        if not tb.language_set and tb.sort_key == "tr":
+            self._set_default_order()
+        tb.draw_head()
+        tb.draw()
+        self._update_chrome()
+
     def _load_if_needed(self):
         s = self.app.series
-        if s is None or self._loaded_path == s.path:
+        if s is None:
             return
+        if self._loaded_path == s.path:
+            if self.busy or self.doc is None or self.doc.tag == s.tag:
+                return
+            self.doc, self.entries = None, []       # the tag of the series changed behind our back: read again
         self._loaded_path = s.path
         path, tag = s.path, s.tag
         self.busy = True
+        self.app.loadline.start("terms")
 
         def done(doc, path=path):
             self.busy = False
+            self.app.loadline.stop("terms")
             if self._loaded_path != path:
                 return
+            self._cancel_scan()
+            self.fr, self._fr_key, self._virt = None, None, {}      # a frontier belongs to one base: a new doc, a new one
             self.doc = doc
             self.marks = model.gender_marks(doc.tag)
             self.table.marks = self.marks
-            self.table.cols[1].label = model.target_label(self.app.series.target or doc.tag)
+            self._sync_language()
             self.entries = doc.entries()
-            self.tab = "new"
-            self.seg.set_value("new")
+            rs, self._restore = self._restore, None
+            self.tab = rs["tab"] if rs and rs.get("tab") in ("new", "known", "questions") else "new"
+            self._want_next = bool(rs and rs.get("tab") == "next")
+            self.seg.set_value(self.tab)
             self._set_default_order()
+            if rs and "sort" in rs:
+                self.table.sort_key, self.table.sort_desc = rs["sort"]["key"], rs["sort"]["desc"]
             self.refilter(keep=set())
             self.table.draw_head()
             if self.table.rows:
@@ -225,6 +315,7 @@ class TermsStep(Step):
 
         def failed(exc, path=path):
             self.busy = False
+            self.app.loadline.stop("terms")
             self._loaded_path = None
             message(self.ui, "The term base of this series cannot be read: %s" % exc)
 
@@ -282,8 +373,12 @@ class TermsStep(Step):
         return "break"
 
     # ------------------------------------------------------------- keys
+    def _keys_here(self) -> bool:
+        """The keys of this step work: it is the one on screen and no panel is open over it."""
+        return self.winfo_ismapped() and not self.ui.panel_open()
+
     def _undo_key(self, e):
-        if not self.winfo_ismapped() or isinstance(e.widget, tk.Entry):
+        if not self._keys_here() or isinstance(e.widget, tk.Entry):
             return None
         self.undo()
         return "break"
@@ -304,6 +399,7 @@ class TermsStep(Step):
         else:
             tb.sort_key, tb.sort_desc = col, col == "count"
         self.refilter()
+        self._remember()
 
     def refilter(self, keep=None):
         tb = self.table
@@ -317,16 +413,40 @@ class TermsStep(Step):
         keep = set(id(t) for t in tb.selected_rows()) if keep is None else keep
         tb.set_rows(out, keep, keep_view=True)
         self._update_chrome()
+        self._update_status()
 
     def _tab_changed(self, v):
         self.tab = v
         self._set_default_order()
         self.refilter()
         self.table.draw_head()
+        self._remember()
 
     def _search_changed(self, s):
         self.query = s
         self.refilter()
+        if not self._restoring:
+            self._remember_later()
+
+    # ------------------------------------------------------------- the small state word next to the search (10.3)
+    def _status_text(self) -> str:
+        if self.scanning:
+            return "Scanning %d %%" % int(self.scan_frac * 100)
+        if self.query.strip() and self.doc is not None and not self.table.rows:
+            return "0"
+        return ""
+
+    def _update_status(self):
+        text = self._status_text()
+        if self.status.cget("text") != text:
+            self.status.configure(text=text)
+
+    def _status_tip(self):
+        if self.scanning:
+            return tips.TERMS_SCANNING
+        if self.status.cget("text") == "0":
+            return tips.TERMS_NO_MATCH
+        return None
 
     def _open_types(self):
         items = ["All types"] + TYPES
@@ -340,8 +460,9 @@ class TermsStep(Step):
             self.type_filter = None if item == "All types" else item
             self.type_btn.set_text(item + "  ▾")
             self.type_btn.pack_forget()
-            self.type_btn.pack(side="right")
+            self.type_btn.pack(side="right", before=self.sel_btn)
             self.refilter()
+            self._remember()
             self.table.body.focus_set()
         self.ui.popup.show(root, x - self.cw * 6, y, self.cw * 22, items, cur, pick,
                            on_cancel=lambda: self.table.body.focus_set(), openers=(self.type_btn,))
@@ -437,7 +558,7 @@ class TermsStep(Step):
         self._settle([entry], pre, old)
 
     def toggle_confirm(self):
-        if self.doc is None or self.busy:
+        if self.doc is None or self.busy or not self._lang_ok():
             return
         sel, pre, old = self._snapshot()
         if not sel:
@@ -453,7 +574,7 @@ class TermsStep(Step):
         self._settle(sel, pre, old)
 
     def confirm_all(self):
-        if self.doc is None or self.busy or self.tab not in ("new", "next"):
+        if self.doc is None or self.busy or not self._lang_ok() or self.tab not in ("new", "next"):
             return
         rows = [t for t in self.table.rows if t.status == "new" and not t.questions and not getattr(t, "cand", False)]
         if not rows:
@@ -545,16 +666,19 @@ class TermsStep(Step):
 
     # ------------------------------------------------------------- import / export
     def import_glossary(self):
-        if self.doc is None or self.busy:
+        if self.doc is None or self.busy or not self._lang_ok():
             return
         files = self.ui.dialogs.open_json_files()
         if not files:
             return
         doc = self.doc
         self.busy = True
+        self._import_state("Importing…")
 
         def done(rep):
-            self.busy = False
+            if self.doc is not doc:
+                self._import_state("")
+                return
             self.entries = doc.entries()
             self.last_import = rep
             self._invalidate_selection()
@@ -565,12 +689,51 @@ class TermsStep(Step):
             self.table.draw_head()
             if self.table.rows:
                 self.table.select_index(0)
+            self._count_in_book(doc)
 
         def failed(exc):
-            self.busy = False
+            self._import_state("")
             message(self.ui, "The glossary could not be imported: %s" % exc)
 
         self.ui.worker.submit(lambda ctx: doc.import_files(files), on_result=done, on_error=failed, lane="bulk")
+
+    def _import_state(self, text: str) -> None:
+        """The Import button shows what the import is doing, or goes back to `Import` (text empty, busy off)."""
+        self.importing = text
+        if not text:
+            self.busy = False
+            self.app.loadline.stop("import")
+        else:
+            self.app.loadline.start("import")
+        self.import_btn.set_text(text or "Import")
+        self._update_chrome()
+
+    def _count_in_book(self, doc) -> None:
+        """After an import: read the open book to fill Count and the chapters of the imported terms. A failure
+        leaves the imported terms as they are and says so."""
+        s, book = self.app.series, self.app.book
+        if s is None or not book:
+            self._import_state("")
+            return
+        self._import_state("Scanning…")
+        path = s.path
+
+        def done(_n):
+            if self.doc is not doc:
+                self._import_state("")
+                return
+            self._import_state("")
+            self.entries = doc.entries()
+            self._invalidate_selection()
+            self.refilter(keep=set(id(t) for t in self.table.selected_rows()))
+
+        def failed(exc):
+            self._import_state("")
+            message(self.ui, "The book could not be read to count the imported terms: %s. The terms were "
+                    "imported; Count stays empty." % exc)
+
+        self.ui.worker.submit(lambda ctx: model.fill_seen_task(ctx, doc, path, book), on_result=done, on_error=failed,
+                              lane="bulk")
 
     def export_base(self):
         if self.doc is None:
@@ -667,19 +830,23 @@ class TermsStep(Step):
         c = termlogic.counts(self.entries)
         nq = c["questions"]
         n = self.next_n
-        hot = bool(n)
-        items = [("new", "New", c["new"]), ("known", "Known", c["known"]),
-                 ("questions", "Questions", nq, nq > 0 and not hot)]
+        # the red of this screen is `Terms N` in the header path or Confirm all (accent.py); counts stay dim
+        items = [("new", "New", c["new"]), ("known", "Known", c["known"]), ("questions", "Questions", nq)]
         if self.fr is not None:
-            items.insert(0, ("next", "Next", n, hot, self.next_extra if self.next_extra else None))
+            items.insert(0, ("next", "Next", n, False, self.next_extra if self.next_extra else None))
         self.seg.set_items(items, self.tab)
         self.not_btn.set_enabled(any(getattr(t, "cand", False) for t in self.table.selected_rows()))
         n = len(self.table.sel)
         self.merge_btn.set_enabled(n >= 2 and not self.busy)
         self.del_btn.set_enabled(n >= 1 and not self.busy)
-        self.confirm_btn.set_enabled(self.tab in ("new", "next") and not self.busy and any(
+        self.confirm_btn.set_enabled(self._lang_ok() and self.tab in ("new", "next") and not self.busy and any(
             t.status == "new" and not t.questions and not getattr(t, "cand", False) for t in self.table.rows))
-        self.import_btn.set_enabled(self.doc is not None and not self.busy)
+        red = self.confirm_btn.enabled and accent.gets_accent("confirm", self.app.accent_facts("terms"), "confirm")
+        kind = "accent" if red else "plain"
+        if self.confirm_btn.kind != kind:
+            self.confirm_btn.kind = kind
+            self.confirm_btn.draw()
+        self.import_btn.set_enabled(self.doc is not None and not self.busy and self._lang_ok())
         self.export_btn.set_enabled(self.doc is not None)
 
     def _key_press(self, e):
@@ -743,17 +910,23 @@ class TermsStep(Step):
                 self.scanning = False
                 self.scanbar_update()
                 self.refilter(keep=set())
+                if self._want_next:
+                    self._want_next = False
+                    self.show_next()
 
         def failed(exc):
             if fr is self.fr:
                 self.scanning = False
                 self.scanbar_update()
+                message(self.ui, "The book could not be scanned for names: %s. The term table is still usable." % exc)
 
         self._scan_token = self.ui.worker.submit(lambda ctx: model.frontier_scan_task(ctx, fr, force),
                                                  on_item=item, on_result=done, on_error=failed, lane="frontier")
 
     def scanbar_update(self) -> None:
         bar = self.scanbar
+        (self.app.loadline.start if self.scanning else self.app.loadline.stop)("scan")
+        self._update_status()
         if not self.scanning:
             if bar.winfo_ismapped():
                 bar.pack_forget()
@@ -769,6 +942,7 @@ class TermsStep(Step):
         """Cheap: the answer is derived from the cached scan; no book is read."""
         if self.doc is None or not model.frontier_ready(self.fr):
             self.next_rows, self.next_n, self.next_extra = [], None, 0
+            self.app.set_terms_state(None, False, None)
             return
         rows = []
         blocking = 0
@@ -788,6 +962,16 @@ class TermsStep(Step):
             blocking += 1 if it.blocking else 0
             rows.append(e)
         self.next_rows, self.next_n, self.next_extra = rows, blocking, len(rows) - blocking
+        scope = self.scope()
+        infos = self.app.infos
+
+        def done(i):
+            return 0 <= i < len(infos) and pieces.kind_of(infos[i]) == pieces.OK
+        self.app.set_terms_state(blocking, model.first_blocked(self.fr, scope), model.blocked_at(self.fr, scope, done))
+
+    def unreviewed_in(self, chapter: int):
+        """Unreviewed terms of one chapter (None while the book is not scanned)."""
+        return model.chapter_unreviewed(self.fr, chapter) if self.fr is not None else None
 
     def dismiss_candidates(self):
         """Not a term: the selected mined names never hold back translation again."""

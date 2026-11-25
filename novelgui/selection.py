@@ -33,13 +33,3 @@ class Selection:
 
 def make(book: str, indices) -> Selection:
     return Selection(book, tuple(sorted(set(int(i) for i in indices))))
-
-
-def summary(sel: Selection, chapters: int, blocks: int, complete: bool = True) -> str:
-    """The dim line of the header: '55 chapters · 1 204 blocks'."""
-    if not sel:
-        return ""
-    word = "chapter" if chapters == 1 else "chapters"
-    unit = "block" if blocks == 1 else "blocks"
-    more = "" if complete else "+"
-    return "%d %s · %s%s %s" % (chapters, word, format(blocks, ",").replace(",", " "), more, unit)

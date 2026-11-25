@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from tkinter import filedialog
 
+from .dialog import PanelStack
+from .keyboard import Keyboard
 from .theme import Fonts
 from .tooltip import Tip
-from .widgets import ListPopup
+from .widgets import Field, ListPopup
+from .winstate import WinState
 from .worker import Worker
 
 
@@ -31,6 +34,11 @@ class Dialogs:
 
 
 class UI:
+    def panel_open(self) -> bool:
+        """A panel is open: the keys of the window behind it do not work."""
+        top = self.panels.top()
+        return top is not None and top.is_open
+
     def __init__(self, root, settings, fonts: Fonts):
         self.root = root
         self.settings = settings
@@ -41,6 +49,10 @@ class UI:
         self.small = fonts.small
         self.ls = fonts.ls
         self.cw = fonts.cw
+        self.winstate = WinState(settings)
+        self.panels = PanelStack(root)         # before the lists: an open list holds the grab and gets the press
+        self.keys = Keyboard(self)
+        Field.install(root)
         self.tip = Tip(root, self.font, self.cw)
         row = int(self.ls * 1.7)
         self.popup = ListPopup(root, self.font, row)       # cell choice lists, type filter

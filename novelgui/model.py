@@ -7,8 +7,12 @@ run on the Tk thread. Books are opened per thread (a `Book` is not shared betwee
 from __future__ import annotations
 
 import difflib
+import gc
+import json
+import re
 import threading
 import time
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,11 +23,13 @@ from novelcore.exporter import NothingToExport
 from novelcore.exporter import export as core_export
 from novelcore.htmlscan import strip_markers
 from novelcore.store import chapter_file_name, read_jsonl, safe_name, split_target
-from novelcore.termmatch import Matcher
+from novelcore.termmatch import Matcher, scan_book
 from novelcore.terms import FILE_NAME as TERMS_FILE
 from novelcore.terms import TYPES, TermBase, import_glossary
 
 from . import chapterlogic as cl
+from . import keystates, langrules, pieces
+from .libraryrules import explain_oserror, natural_key
 from .termlogic import PRONOUNS
 
 EXPORT_READY = True
@@ -72,44 +78,192 @@ class SeriesInfo:
     target: str
     tag: str
     books: tuple
+    labels: tuple = ()      # ((volume name, label shown), ...) set by Rename volume
+    broken: str = ""        # why the series cannot be opened ("" = fine)
+    chosen: bool = True     # False for a series created by Add book whose language is not chosen yet (3.1)
+
+    def label_of(self, stem: str) -> str:
+        return dict(self.labels).get(stem) or stem
+
+
+def _series_info(p: Path) -> SeriesInfo:
+    """The list entry of one series folder; a folder whose series.json cannot be read is marked `broken`."""
+    try:
+        s = Series.open(p)
+    except (FileNotFoundError, ValueError):
+        return SeriesInfo(p.name, str(p), "", "", (), (), _broken_reason(p))
+    labels = s.settings.get("volume_labels")
+    labels = tuple(sorted((str(k), str(v)) for k, v in labels.items() if isinstance(v, str) and v.strip()))         if isinstance(labels, dict) else ()
+    books = tuple(sorted(s.book_names(), key=natural_key))
+    return SeriesInfo(str(s.settings.get("name") or p.name), str(p), str(s.settings.get("target", "")),
+                      s.target_tag, books, labels, chosen=s.settings.get("target_chosen") is not False)
 
 
 def list_series_task(ctx, library) -> list[SeriesInfo]:
+    """Every series of the library, the series folders only (`.deleted` and other hidden folders are not
+    series). A folder whose series.json cannot be read is listed too, marked `broken`, so the user sees it."""
     out = []
     lib = Path(library)
     try:
-        folders = sorted((p for p in lib.iterdir() if p.is_dir()), key=lambda p: p.name.lower())
+        folders = sorted((p for p in lib.iterdir() if p.is_dir() and not p.name.startswith(".")),
+                         key=lambda p: p.name.lower())
     except OSError:
         return out
     for p in folders:
-        if not (p / "series.json").exists():
-            continue
-        try:
-            s = Series.open(p)
-        except (FileNotFoundError, ValueError):
-            continue
-        out.append(SeriesInfo(str(s.settings.get("name") or p.name), str(p), str(s.settings.get("target", "")),
-                              s.target_tag, tuple(s.book_names())))
+        if (p / "series.json").exists():
+            out.append(_series_info(p))
     return out
 
 
-def series_folder(library, name: str) -> Path:
-    return Path(library) / safe_name(name, 80, "series")
+def read_series(series_path) -> SeriesInfo | None:
+    """One series as the list shows it now, or None when its folder or series.json is gone."""
+    p = Path(series_path)
+    return _series_info(p) if (p / "series.json").exists() else None
 
 
-def series_exists(library, name: str) -> bool:
-    return (series_folder(library, name) / "series.json").exists()
+# ---------------------------------------------------------------- the language of a series (window 3.1)
+def series_language(info) -> str | None:
+    """The ONE reader of a series' target language: `tag:Name`, or None while the user has not chosen it. A
+    series without the `target_chosen` flag (made before this window, or by the core) counts as chosen."""
+    if info is None or not info.chosen or not info.target:
+        return None
+    return info.target
 
 
-def create_series_task(ctx, library, name: str, target: str, epub) -> str:
-    """New series with its first book. Returns the series folder."""
-    series = Series.create(library, name, target)
-    series.add_book(epub)
-    return str(series.path)
+def set_series_language(series_path, target: str) -> None:
+    """The ONE writer: the target and `target_chosen` go into series.json in one atomic write."""
+    tag, _name = split_target(target)
+    if not tag:
+        raise ValueError("no language")
+
+    def put(settings):
+        settings["target"] = target
+        settings["target_chosen"] = True
+    update_series_settings(series_path, put)
 
 
-def add_book_task(ctx, series_path, epub) -> str:
-    return Series.open(series_path).add_book(epub)
+def with_language(info, target: str):
+    """`info` as the list would read it after `set_series_language(info.path, target)`."""
+    from dataclasses import replace
+    return replace(info, target=target, tag=split_target(target)[0], chosen=True)
+
+
+def language_lock(series_path) -> tuple[bool, bool]:
+    """(a block is translated, a term is confirmed): while either holds, the language cannot change."""
+    root = Path(series_path)
+    translated = False
+    for f in sorted((root / "chapters").glob("*/*.jsonl")):
+        if any(r.get("status") == "ok" for r in read_jsonl(f)):
+            translated = True
+            break
+    confirmed = False
+    tf = root / TERMS_FILE
+    if tf.is_file():
+        try:
+            base = TermBase.load(tf, split_target(str(Series.open(root).settings.get("target", "")))[0] or None)
+            confirmed = any(e.status == "confirmed" for e in base.sorted_entries())
+        except (OSError, ValueError):
+            confirmed = False
+    return translated, confirmed
+
+
+def book_language_tag(book_path) -> str:
+    """The dc:language of an EPUB as a primary tag ("" when it has none or cannot be read)."""
+    try:
+        with zipfile.ZipFile(book_path) as z:
+            cont = z.read("META-INF/container.xml").decode("utf-8", "replace")
+            m = re.search(r'full-path="([^"]+)"', cont)
+            if not m:
+                return ""
+            return langrules.dc_language(z.read(m.group(1)).decode("utf-8", "replace"))
+    except (OSError, KeyError, zipfile.BadZipFile):
+        return ""
+
+
+def source_language(series_path, book: str) -> langrules.SourceLang:
+    """Source language for export names (13.11): the book's dc:language, else the series' source_lang, else
+    Original / src."""
+    try:
+        src = str(Series.open(series_path).settings.get("source_lang") or "")
+    except (FileNotFoundError, ValueError):
+        src = ""
+    return langrules.source_language(book_language_tag(book_file(series_path, book)) if book else "", src)
+
+
+def _broken_reason(folder: Path) -> str:
+    """Why series.json of a folder cannot be used, in plain words."""
+    try:
+        data = json.loads((folder / "series.json").read_text(encoding="utf-8"))
+    except OSError as exc:
+        return "series.json cannot be opened (%s)" % explain_oserror(exc)
+    except ValueError:
+        return "series.json is damaged"
+    return "series.json is not a series record" if not isinstance(data, dict) else "series.json cannot be read"
+
+
+def clean_name(text: str, maxlen: int = 60, fallback: str = "item") -> str:
+    """The core's file name cleaning (window rules that build names call this, never a copy of it)."""
+    return safe_name(text, maxlen, fallback)
+
+
+def check_epub(path) -> int:
+    """Open a file with the core's EPUB reader; returns its number of chapters. Raises ValueError with the
+    reason in plain words when it cannot be read."""
+    p = Path(path)
+    try:
+        book = Book.open(p)
+    except zipfile.BadZipFile:
+        raise ValueError("it is not an EPUB file (not a zip archive)") from None
+    except OSError as exc:
+        raise ValueError("it cannot be opened (%s)" % (exc.strerror or exc)) from None
+    except Exception as exc:
+        text = str(exc)
+        if "not a zip" in text.lower():
+            raise ValueError("it is not an EPUB file (not a zip archive)") from None
+        raise ValueError("it cannot be read as an EPUB (%s)" % (text.rsplit(": ", 1)[-1][:120]
+                                                                or type(exc).__name__)) from None
+    try:
+        n = len(book.chapters)
+    except Exception as exc:
+        raise ValueError("it cannot be read as an EPUB (%s)" % (str(exc)[:120] or type(exc).__name__)) from None
+    finally:
+        try:
+            book.close()
+        except Exception:
+            pass
+    if n == 0:
+        raise ValueError("it has no chapters")
+    return n
+
+
+def create_series_record(library, name: str, target: str, **settings) -> str:
+    """Write series.json (and the folders) of a new series; returns the series folder. One write."""
+    return str(Series.create(library, name, target, **settings).path)
+
+
+def update_series_settings(series_path, fn) -> None:
+    """Read series.json, let `fn(settings_dict)` change it, write it back atomically."""
+    s = Series.open(series_path)
+    fn(s.settings)
+    s.save_settings()
+
+
+def release_books_task(ctx, folder) -> int:
+    """Close every book of `folder` that this worker thread holds open (an open zip blocks a move on Windows).
+    Runs once on every lane thread. Returns how many were closed."""
+    cache = getattr(_local, "books", None)
+    n = 0
+    if cache:
+        root = str(Path(folder)).lower()
+        for key in list(cache):
+            if str(key).lower().startswith(root):
+                try:
+                    cache.pop(key)[1].close()
+                except Exception:
+                    pass
+                n += 1
+    gc.collect()        # a book dropped without being closed sits in a reference cycle until the collector runs
+    return n
 
 
 def gender_marks(tag: str) -> dict:
@@ -123,15 +277,6 @@ def target_label(target: str) -> str:
     """Language name for column headers: 'ru:Russian' -> 'Russian' (profile name for a bare tag)."""
     tag, name = split_target(target)
     return profiles.get(tag, name if name != tag else None).name
-
-
-def target_of(choice: str, other: str = "") -> str:
-    """'tag:Name' of a language choice; `other` is the text typed for the Other choice."""
-    for value, label in TARGETS:
-        if choice == label:
-            return value
-    tag, name = split_target(other)
-    return "%s:%s" % (tag, name) if tag else "ru:Russian"
 
 
 # ---------------------------------------------------------------- chapters of a book
@@ -272,6 +417,13 @@ def export_task(ctx, series_path, book: str, indices, mode: str) -> ExportOutcom
     return export_selection(series_path, book, indices, mode)
 
 
+def export_piece_task(ctx, series_path, book: str, positions, mode: str, name: str) -> ExportOutcome:
+    """Export chapters of one volume into `<series>/out/` under `name`; a taken name gets ` (2)`, ` (3)` ...
+    (never overwritten, window_spec 8.4). The core writes a temporary file and renames it at the end."""
+    out_dir = Path(series_path) / "out"
+    return export_selection(series_path, book, positions, mode, out_path=pieces.unique_path(out_dir, name))
+
+
 # ---------------------------------------------------------------- terms
 class TermsDoc:
     """The term base of one series with saving after every change."""
@@ -383,6 +535,23 @@ def load_terms_task(ctx, series_path, tag: str) -> TermsDoc:
     return TermsDoc(series_path, tag)
 
 
+def fill_seen_task(ctx, doc: TermsDoc, series_path, book_name: str) -> int:
+    """After a glossary import: read the open book and note, for every term of the base, how often and in which
+    chapters it occurs (the core's scan_book fills `seen` and `count`), then save the base. Returns the number of
+    chapters read. Raises what reading the book raises (the window shows it)."""
+    book = open_book(book_file(series_path, book_name))
+    for attempt in range(3):
+        try:
+            rep = scan_book(doc.base, book)
+            break
+        except RuntimeError:        # the base changed under the scan: try again
+            time.sleep(0.05)
+    else:
+        return 0
+    doc.save()
+    return int(rep.get("chapters", 0))
+
+
 def terms_in_selection_task(ctx, doc: TermsDoc, series_path, book_name: str, indices) -> set:
     """Ids of the entries that are found in the selected chapters."""
     if not indices:
@@ -455,12 +624,15 @@ import inspect  # noqa: E402
 import os  # noqa: E402
 
 from novelcore import frontier as core_frontier  # noqa: E402
+from novelcore import checks as core_checks  # noqa: E402
 from novelcore import job as core_job  # noqa: E402
-from novelcore.pool import DEFAULT_PACE, PACE_MAX, PACE_MIN, key_hash, read_day_exhausted, read_day_usage  # noqa: E402
+from novelcore.pool import (DEFAULT_PACE, PACE_MAX, PACE_MIN, day_return, key_hash, read_day_exhausted,  # noqa: E402
+                            read_day_usage)
 from novelcore.run import Runner, from_ranges  # noqa: E402
 from novelcore.store import ChapterLog  # noqa: E402
 
-from .jobstate import JobView, assemble_problems, kept_record, manual_record  # noqa: E402
+from . import findingrules  # noqa: E402
+from .jobstate import JobView, Problem, assemble_problems, kept_record, manual_record  # noqa: E402
 
 # Free-tier requests per key and day by model (AI Studio figure of 2026-11-13). Unknown model: None.
 DAILY_LIMITS = {"gemini-3.1-flash-lite": 500}
@@ -507,7 +679,46 @@ def job_view(series_path) -> JobView:
     return JobView(state, rec["book"], chapters, st["blocks_done"], st["blocks_total"], st["chapters_done"],
                    st["chapters_total"], st["blocks_failed"], st["terms_pending"],
                    blocked if isinstance(blocked, int) else None, rec.get("wake_at"), str(rec.get("error") or ""),
-                   foreign=bool(st["running"] and st["pid"] != os.getpid()))
+                   foreign=bool(st["running"] and st["pid"] != os.getpid()),
+                   dead=dead_reasons(series_path) if state == "failed" else ())
+
+
+def dead_reasons(series_path) -> tuple:
+    """Why the pool holds key/model pairs of the series as dead (`invalid key`, `model not found`)."""
+    try:
+        data = json.loads((Path(series_path) / ".state" / "pool.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ()
+    pairs = data.get("pairs") if isinstance(data, dict) else None
+    if not isinstance(pairs, dict):
+        return ()
+    return tuple(sorted({str(r.get("reason") or "") for r in pairs.values()
+                         if isinstance(r, dict) and r.get("state") == "dead"} - {""}))
+
+
+def revive_dead_pairs(series_path, keys, models) -> None:
+    """Give the dead key/model pairs of the series another chance (the pairs are keyed by key hash and model, so
+    a key or a model that was fixed outside the app stays marked dead otherwise). Uses the core's own call."""
+    if not keys or not models:
+        return
+    from novelcore.pool import Pool
+    Pool(list(keys), list(models), state_path=Path(series_path) / ".state" / "pool.json").revive_dead()
+
+
+def set_job_state(series_path, state: str) -> bool:
+    """Rewrite the state of the series' job record (`stopped` ends a quota wait, `finished` discards an
+    unfinished job; translated chapters are never touched). False when there is no record."""
+    rec = core_job.read_job(series_path)
+    if rec is None:
+        return False
+    rec.update(state=state, wake_at=None, terms_pending=0, blocked_chapter=None, error=None, updated=time.time())
+    core_job.write_job(series_path, rec)
+    return True
+
+
+def holder_alive(info) -> bool:
+    """Whether the process named in a lock record (pid, start time) is still the one that wrote it."""
+    return bool(core_job._holder_alive(info))
 
 
 class RunHandle:
@@ -536,9 +747,12 @@ def make_gate(ctx, handle, series: Series, book: str):
     return fr.check_chapter
 
 
-def run_task(ctx, handle: RunHandle, series_path, book: str, chapters, cfg: RunConfig, resume: bool = False):
+def run_task(ctx, handle: RunHandle, series_path, book: str, chapters, cfg: RunConfig, resume: bool = False,
+             retry=()):
     """Start a job (or continue the recorded one) and relay its events; returns the run summary.
-    Emits ("event", Event), ("scan", done, total), ("busy", message)."""
+    `retry`: marks (chapter, block, source hash, text digest) of check findings; the core marks exactly the ones
+    that still describe the block and a job over their chapters follows (checks.retry, called only here, at the
+    real start). Emits ("event", Event), ("scan", done, total), ("busy", message)."""
     series = Series.open(series_path)
     try:
         try:
@@ -550,6 +764,11 @@ def run_task(ctx, handle: RunHandle, series_path, book: str, chapters, cfg: RunC
                 kw["gate"] = gate
             if resume:
                 job = core_job.resume(series, cfg.keys, cfg.models, **kw)
+            elif retry:
+                marks = fresh_marks(series, book, retry)
+                if not marks:
+                    raise core_job.JobError("These blocks changed since the check: nothing to translate again.")
+                job = core_checks.retry(series, book, marks, cfg.keys, cfg.models, **kw)
             elif HAS_CHAPTERS:
                 job = core_job.Job(series, book, cfg.keys, cfg.models, chapters=list(chapters), **kw)
             else:
@@ -617,7 +836,8 @@ def sample_rows(series_path, book: str, chapter: int, n: int) -> list:
 
 # ---------------------------------------------------------------- failed blocks
 def problems_task(ctx, series_path, book: str, chapters) -> list:
-    """Failed blocks of the given chapters (latest record of the block is not ok)."""
+    """Failed blocks of the given chapters (latest record of the block is not ok) and the check findings of the
+    volume that still describe their block and are not ignored."""
     series = Series.open(series_path)
     out = []
     with series.open_book(book) as b:
@@ -631,7 +851,75 @@ def problems_task(ctx, series_path, book: str, chapters) -> list:
             log = ChapterLog(path)
             blocks = [(blk.index, blk.sha, " ".join(strip_markers(blk.text).split())) for blk in b.blocks(ch)]
             out.extend(assemble_problems(i, ch.title or "", blocks, log.lookup))
+        if not ctx.cancelled:
+            out.extend(finding_rows(series, b, book))
+    return sorted(out, key=lambda p: (p.chapter, p.block, p.kind != "failed"))
+
+
+def finding_rows(series, b, book: str) -> list:
+    """Problem rows of the saved check report of a volume (see check_task), minus ignored and outdated ones."""
+    rep = core_checks.Report.load(series, book)
+    if rep is None:
+        return []
+    ignored = findingrules.load_ignored(series.path, book)
+    logs: dict = {}
+    out = []
+    for idx, cr in sorted(rep.chapters.items()):
+        if not 0 <= idx < len(b.chapters):
+            continue
+        for f in cr.findings:
+            tkey = findingrules.text_key(f.text)
+            if findingrules.entry_key(f.chapter, f.block, f.src_sha, f.kind, tkey) in ignored:
+                continue
+            log = logs.get(idx)
+            if log is None:
+                log = logs[idx] = ChapterLog(series.chapter_log(book, b.chapters[idx]).path)
+            if not findingrules.still_true(log.lookup(f.block, f.src_sha), tkey):
+                continue
+            out.append(Problem(f.chapter, f.title or b.chapters[idx].title or "", f.block, f.src_sha,
+                               " ".join(strip_markers(f.source).split()), findingrules.label(f.kind), f.kind,
+                               f.text, tkey, findingrules.detail_text(f.kind, f.detail)))
     return out
+
+
+def fresh_marks(series, book: str, marks) -> list:
+    """The retry marks whose block still has the translation the finding was made on: a block typed over,
+    kept or retranslated since the check is left alone. Returns (chapter, block, source hash) tuples."""
+    out = []
+    with series.open_book(book) as b:
+        for c, i, sha, tkey in marks:
+            if not 0 <= c < len(b.chapters):
+                continue
+            log = ChapterLog(series.chapter_log(book, b.chapters[c]).path)
+            if findingrules.still_true(log.lookup(i, sha), tkey):
+                out.append((c, i, sha))
+    return out
+
+
+def check_task(ctx, series_path, book: str, chapters) -> dict:
+    """Run the core's checks over `chapters` of a volume and save the result in the series (the earlier results of
+    other chapters stay). Emits ("check", done, total). Returns {"findings": n, "chapters": n, "cancelled": bool}."""
+    series = Series.open(series_path)
+    rep = core_checks.check_range(series, book, list(chapters), progress=lambda d, t, i: ctx.emit(("check", d, t)),
+                                  cancel=lambda: ctx.cancelled)
+    old = core_checks.Report.load(series, book)
+    if old is not None:
+        for i, cr in rep.chapters.items():
+            old.chapters[i] = cr
+        old.created = rep.created
+        old.target = rep.target
+        rep_all = old
+    else:
+        rep_all = rep
+    rep_all.cancelled = rep.cancelled
+    rep_all.save(series)
+    return {"findings": sum(len(c.findings) for c in rep.chapters.values()), "chapters": len(rep.chapters),
+            "cancelled": rep.cancelled}
+
+
+def ignore_task(ctx, series_path, book: str, rows) -> int:
+    """Remember findings as ignored (they stay hidden until the block's translation changes)."""
+    return findingrules.add_ignored(series_path, book, [(p.chapter, p.block, p.sha, p.kind, p.tkey) for p in rows])
 
 
 def resolve_problems_task(ctx, series_path, book: str, problems, action: str, typed: str = "") -> int:
@@ -679,6 +967,10 @@ def quota_status(library, keys, models, now: float) -> Quota:
         folders = [p for p in Path(library).iterdir() if p.is_dir()]
     except OSError:
         folders = []
+    try:        # series moved to .deleted today spent today's quota too (window_spec 13.10)
+        folders += [p for p in (Path(library) / ".deleted").iterdir() if p.is_dir()]
+    except OSError:
+        pass
     for f in folders:
         state = f / ".state" / "pool.json"
         if not state.exists():
@@ -698,6 +990,30 @@ def quota_status(library, keys, models, now: float) -> Quota:
                 if "%s|%s" % (h, m) not in exhausted:
                     left += max(0, lim - used.get((h, m), 0))
     return Quota(len(hashes), len(models), limits[0] if limits else None, total_used, left, cap)
+
+
+def key_states(library, keys, models, now: float):
+    """State of every key (`{key: keystates.KeyState}`) and the models held as not found (`set`), merged over the
+    pool files of all series of the library (window_spec 11.2, 11.4). Reads files: call it on a worker thread."""
+    tables = []
+    try:
+        folders = [p for p in Path(library).iterdir() if p.is_dir() and not p.name.startswith(".")]
+    except OSError:
+        folders = []
+    for f in folders:
+        try:
+            data = json.loads((f / ".state" / "pool.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict) and isinstance(data.get("pairs"), dict):
+            tables.append(data["pairs"])
+    hashes = {k: key_hash(k) for k in keys}
+    by_hash, missing = keystates.merge_pairs(tables, list(hashes.values()), list(models), now)
+    return {k: by_hash[h] for k, h in hashes.items()}, missing
+
+
+def key_states_task(ctx, library, keys, models):
+    return key_states(library, keys, models, time.time())
 
 
 # ---------------------------------------------------------------- series settings, prompt
@@ -781,6 +1097,39 @@ def next_items(fr, indices) -> list:
                            blocking=gate or a[1] != core_frontier.KIND_CANDIDATE) for a in acc.values()]
     out.sort(key=lambda it: (not it.blocking, it.first, -it.count, it.text.lower()))
     return out
+
+
+def first_blocked(fr, indices) -> bool:
+    """True when the first chapter of the selection has an unreviewed item that holds the job back (the
+    translation cannot start at all). Needs a scanned frontier."""
+    idx = sorted(indices)
+    if not idx or not frontier_ready(fr):
+        return False
+    gate = gate_candidates()
+    return any(gate or it.kind != core_frontier.KIND_CANDIDATE for it in fr.unreviewed(idx[0], candidates=True))
+
+
+def blocked_at(fr, indices, translated=lambda i: False):
+    """The first chapter of the selection that an unreviewed item holds back (the run translates the chapters
+    before it and then stops), or None. A chapter that is translated completely never blocks. Needs a scanned
+    frontier."""
+    if not frontier_ready(fr):
+        return None
+    gate = gate_candidates()
+    for c in sorted(indices):
+        if translated(c):
+            continue
+        if any(gate or it.kind != core_frontier.KIND_CANDIDATE for it in fr.unreviewed(c, candidates=True)):
+            return c
+    return None
+
+
+def chapter_unreviewed(fr, chapter: int):
+    """Unreviewed items that hold back one chapter, or None while the frontier is not scanned."""
+    if not frontier_ready(fr):
+        return None
+    gate = gate_candidates()
+    return sum(1 for it in fr.unreviewed(chapter, candidates=True) if gate or it.kind != core_frontier.KIND_CANDIDATE)
 
 
 def _doc_add_confirmed(self, source: str, tr: str, count: int = 0, first=None):

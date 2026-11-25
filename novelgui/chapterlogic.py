@@ -67,42 +67,45 @@ def parse_pieces(text: str) -> list[tuple[int, int]] | None:
     return out or None
 
 
-def resolve_number(n: int, numbers: list, count: int) -> tuple[int | None, bool]:
-    """Position of the chapter whose title number is `n`. When the number is missing or repeats in the book
-    it is taken as a position instead (typed 1-based, as shown in the list). Returns (index or None,
-    taken_as_position)."""
+def unique_hit(n: int, numbers: list) -> int | None:
+    """Position of the one chapter whose title number is `n`, else None."""
     hits = [i for i, v in enumerate(numbers) if v == n]
-    if len(hits) == 1:
-        return hits[0], False
-    if 1 <= n <= count:
-        return from_display(n), True
-    return None, True
+    return hits[0] if len(hits) == 1 else None
+
+
+def select_piece(a: int, b: int, numbers: list, toc: list) -> tuple[set, bool]:
+    """Chapters of one typed range a-b (inclusive, a <= b) and whether the numbers were taken as list positions.
+    Title numbers decide; a number that does not exist is simply not in the selection. Only when no chapter
+    carries a number inside the range are the numbers taken as positions of the list (typed 1-based)."""
+    count = len(numbers)
+    pa, pb = unique_hit(a, numbers), unique_hit(b, numbers)
+    if pa is not None and pb is not None:
+        lo, hi = min(pa, pb), max(pa, pb)
+        return {i for i in range(lo, hi + 1) if not toc[i]}, False
+    by_number = {i for i, v in enumerate(numbers) if v is not None and a <= v <= b and not toc[i]}
+    if by_number:
+        return by_number, False
+    lo, hi = max(a, 1), min(b, count)
+    return {from_display(n) for n in range(lo, hi + 1) if not toc[from_display(n)]}, True
 
 
 def select_by_numbers(text: str, numbers: list, toc: list) -> RangeResult:
-    """Chapters named by the numbers typed in `text`. `numbers[i]` is the title number of chapter i (or None),
-    `toc[i]` tells whether it is a contents page (never selected)."""
+    """Chapters named by the ranges typed in `text` (window_spec 4.5): inclusive, `2750-2697` is `2697-2750`,
+    title numbers first, list positions as the fallback, numbers that do not exist are left out. `numbers[i]`
+    is the title number of chapter i (or None), `toc[i]` tells whether it is a contents page (never selected)."""
     pieces = parse_pieces(text)
     if pieces is None:
         return RangeResult((), "", False, "not a range")
-    count = len(numbers)
     picked: set[int] = set()
     fallback = False
     for a, b in pieces:
-        pa, fa = resolve_number(a, numbers, count)
-        pb, fb = resolve_number(b, numbers, count)
-        fallback = fallback or fa or fb
-        if pa is None or pb is None:
-            return RangeResult((), "", fallback, "no such chapter: %d" % (a if pa is None else b))
-        lo, hi = min(pa, pb), max(pa, pb)
-        picked.update(i for i in range(lo, hi + 1) if not toc[i])
+        got, pos = select_piece(a, b, numbers, toc)
+        picked |= got
+        fallback = fallback or (pos and bool(got))
     idx = tuple(sorted(picked))
-    how = "by position" if fallback else "by title numbers"
     if not idx:
-        return RangeResult((), "", fallback, "nothing to select")
-    first, last = display_no(idx[0]), display_no(idx[-1])
-    note = "%d chapters %s, %d to %d" % (len(idx), how, first, last)
-    return RangeResult(idx, note, fallback)
+        return RangeResult((), "", fallback, "no chapter in this range")
+    return RangeResult(idx, "%d %s" % (len(idx), "chapter" if len(idx) == 1 else "chapters"), fallback)
 
 
 # ---------------------------------------------------------------- state of a chapter

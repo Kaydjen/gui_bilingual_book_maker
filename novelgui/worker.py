@@ -9,7 +9,9 @@ Each lane is one thread, so a long scan in one lane never delays a quick request
 from __future__ import annotations
 
 import queue
+import sys
 import threading
+import time
 import traceback
 
 
@@ -39,6 +41,10 @@ class Ctx:
         self._worker._out.put(("item", self._job, item))
 
 
+SWITCH_INTERVAL = 0.0005    # seconds: a busy worker thread gives the UI thread the interpreter this quickly
+POLL_BUDGET = 0.008         # seconds of callbacks the UI thread runs per poll before it lets the window breathe
+
+
 class Worker:
     POLL_MS = 25
 
@@ -50,6 +56,9 @@ class Worker:
         self._next = 1
         self._closed = False
         self._after = None
+        # Every Tk call of the UI thread gives up the interpreter and has to win it back; with the default 5 ms
+        # interval a busy worker makes each canvas call cost milliseconds and the window feels frozen.
+        sys.setswitchinterval(min(sys.getswitchinterval(), SWITCH_INTERVAL))
         self._threads = [threading.Thread(target=self._run, args=(q,), daemon=True, name="lane-" + n)
                          for n, q in self._lanes.items()]
         for t in self._threads:
@@ -83,8 +92,11 @@ class Worker:
     def _poll(self) -> None:
         if self._closed:
             return
+        start = time.perf_counter()
         try:
             while True:
+                if time.perf_counter() - start > POLL_BUDGET:
+                    break               # the rest is handled by the next poll
                 kind, job, payload = self._out.get_nowait()
                 h = self._handlers.get(job)
                 if h is None:
@@ -109,6 +121,10 @@ class Worker:
             self._after = self.root.after(self.POLL_MS, self._poll)
         except Exception:
             self._closed = True
+
+    @property
+    def lane_names(self) -> list:
+        return list(self._lanes)
 
     def idle(self) -> bool:
         """True when no task is waiting or running and every callback has been delivered."""

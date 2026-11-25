@@ -39,11 +39,13 @@ class Tip(tk.Frame):
         self.root = root
         self.job = None
         self.widget = None
-        root.bind("<KeyPress>", lambda e: self.hide(), add="+")
-        root.bind("<ButtonPress>", lambda e: self.hide(), add="+")
+        self.cur = None             # (widget, content key) the pointer rests on: armed, shown or dismissed
+        root.bind("<KeyPress>", lambda e: self.hide(forget=False), add="+")
+        root.bind("<ButtonPress>", lambda e: self.hide(forget=False), add="+")
 
     def arm(self, widget, e, content):
         self.widget = widget
+        self.cur = (widget, content_key(content))
         x, y = e.x_root, e.y_root
         self.job = widget.after(DELAY_MS, lambda: self.show(x, y, content))
 
@@ -94,25 +96,60 @@ class Tip(tk.Frame):
                 parts.append("%s  %s" % (n.cget("text"), v.cget("text")))
         return "\n".join(parts)
 
-    def hide(self):
+    def hide(self, forget=True):
+        """Take the tip away. `forget` ends the pointer's visit (it left); a click or a key keeps the visit, so
+        the tip does not come back while the pointer only moves on the same element."""
         if self.job is not None and self.widget is not None:
             try:
                 self.widget.after_cancel(self.job)
             except tk.TclError:
                 pass
         self.job = None
+        if forget:
+            self.cur = None
         if self.winfo_ismapped():
             self.place_forget()
 
 
+def content_key(content):
+    return repr(content)
+
+
+def _inside(widget, w) -> bool:
+    while w is not None:
+        if w is widget:
+            return True
+        w = getattr(w, "master", None)
+    return False
+
+
 def attach_tip(widget, tip, fn):
-    """fn(event) -> None | str | (text, facts)."""
+    """fn(event) -> None | str | (text, facts). The tip stays while the pointer moves on the element (what
+    `fn` returns for the pointer position stays the same) and goes when the pointer leaves it, a button is
+    pressed or a key is typed. A table that answers differently per cell gets a new tip per cell."""
     def moved(e):
-        tip.hide()
         t = fn(e)
-        if t:
-            tip.arm(widget, e, t)
+        if not t:
+            tip.hide()
+            return
+        if tip.cur == (widget, content_key(t)):
+            return
+        tip.hide()
+        tip.arm(widget, e, t)
+
+    def left(e):
+        try:
+            under = widget.winfo_containing(e.x_root, e.y_root)
+        except (KeyError, tk.TclError):
+            under = None
+        if _inside(widget, under):
+            return              # the pointer went onto a child of the element
+        if tip.cur is not None and tip.cur[0] is widget:
+            tip.hide()
+
+    widget.tip_fn = fn          # what a check calls to see what the pointer would be told here
     widget.bind("<Motion>", moved, add="+")
     widget.bind("<Enter>", moved, add="+")
-    for ev in ("<Leave>", "<ButtonPress>", "<MouseWheel>", "<KeyPress>"):
-        widget.bind(ev, lambda e: tip.hide(), add="+")
+    widget.bind("<Leave>", left, add="+")
+    for ev in ("<ButtonPress>", "<MouseWheel>", "<KeyPress>"):
+        widget.bind(ev, lambda e: tip.hide(forget=False), add="+")
