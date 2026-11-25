@@ -3,7 +3,8 @@ import QtQuick
 import Novel
 
 // One step of the path. `kind`: "" | "red" (Terms: pulses red three times and stays red) | "wave" (Translate while a job
-// runs) | "attention" (Translate: a job needs the user, a slow red pulse). The active step is a small lifted pill.
+// runs) | "attention" (Translate: a job needs the user, a slow red pulse) | "ready" (Export: every chosen chapter is translated: it
+// glows once and stays bright). The active step is a small lifted pill.
 Item {
     id: step
 
@@ -15,8 +16,9 @@ Item {
     property real progress: -1          // the book scan under the word (Terms): a thin line, nothing moves
     property real pulse: 0
     property bool settled: false
+    property real glow: 0
     readonly property real value: kind === "red" ? (settled ? 1 : pulse) : (kind === "attention" ? 0.6 + 0.4 * pulse : 0)
-    readonly property color base: dim ? Theme.faint : (active || hover.hovered ? Theme.bright : Theme.dim)
+    readonly property color base: dim ? Theme.faint : (active || hover.hovered || kind === "ready" ? Theme.bright : Theme.dim)
     readonly property color shown: Theme.mix(base, Theme.accent, value)
     signal clicked()
 
@@ -27,9 +29,23 @@ Item {
         settled = false
         if (kind === "red")
             threePulses.restart()
+        if (kind === "ready")
+            glowOnce.restart()
     }
-    Component.onCompleted: if (kind === "red") threePulses.restart()
+    Component.onCompleted: {
+        if (kind === "red")
+            threePulses.restart()
+        if (kind === "ready")
+            glowOnce.restart()
+    }
 
+    Item {
+        objectName: "stepGlow_" + step.text
+        anchors.fill: parent
+        visible: step.glow > 0
+        opacity: step.glow
+        Shadow { level: "glow" }
+    }
     Surface {
         anchors.fill: parent
         visible: step.active && !step.dim
@@ -78,6 +94,11 @@ Item {
     }
     TipArea { tip: step.tip }
 
+    SequentialAnimation {
+        id: glowOnce
+        NumberAnimation { target: step; property: "glow"; from: 0; to: 1; duration: 700; easing.type: Easing.InOutSine }
+        NumberAnimation { target: step; property: "glow"; to: 0; duration: 2300; easing.type: Easing.InOutSine }
+    }
     SequentialAnimation {
         id: threePulses
         loops: 3

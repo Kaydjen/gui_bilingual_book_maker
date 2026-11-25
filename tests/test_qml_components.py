@@ -295,7 +295,7 @@ class Overlays(Base):
         self.check("panel fill #171717", PANEL, r.pixel(c["x"] + 8, c["y"] + c["h"] / 2), 3)
         self.check("panel radius 14", arc_inset(14), self.edge(r, "panelCard", PANEL), 1.5)
         self.check("veil dims what is behind (#0a0a0a at 50 %)", (5, 5, 5), r.pixel(4, 700), 2)
-        self.check("foot: closing button at the left padding (22)", c["x"] + 22, r.item("panelClose")["x"], 1)
+        self.check("foot: closing button just left of the action (gap 8)", r.item("panelAction")["x"] - 8, r.item("panelClose")["x"] + r.item("panelClose")["w"], 1)
         self.check("foot: action button at the right padding (22)", c["x"] + c["w"] - 22, r.item("panelAction")["x"] + r.item("panelAction")["w"], 1)
         self.check("foot: both buttons on one line", r.item("panelClose")["y"], r.item("panelAction")["y"], 0.5)
         self.check("foot: bottom padding 20", c["y"] + c["h"] - 20, r.item("panelAction")["y"] + r.item("panelAction")["h"], 1)

@@ -89,6 +89,8 @@ PATH_EXPORT = ("Write the translated chapters of the volume into an EPUB file.",
 CONTEXT_LINE = ("What the next steps work on: series, volume, chosen chapters and the language. Click to go to "
                 "Books and change it.", [("Chapters", "numbers from the titles"), ("Click", "opens Books")])
 
+PATH_EXPORT_READY = ("The chosen chapters are translated: ready to export.", [("Step", "4 of 4")])
+
 # Export (window 8)
 EXPORT_PIECE = ("Chapters that are translated one after another. Click to put its range into the fields below.",
                 [("Counts", "fully translated chapters"), ("Updated", "while a translation runs")])
@@ -111,6 +113,33 @@ EXPORT_RUNNING = "An export of this volume is in progress."
 EXPORT_LAST = ("The file written last. Click to show it in its folder.", [("Folder", "out, in the series")])
 EXPORT_LEFT_OUT = ("Chapters of the range that are not fully translated yet are not in the file: %s.",
                    [("Left out", "not fully translated")])
+
+# Export, the QML screen (window 8.7, 10.5, 14.12; the texts take the facts of the row)
+EX_HEAD = "Tick every translated chapter: the whole volume goes into one file. Click again: none."
+EX_OPEN = "Show the chapters of this piece, to take only a part of it."
+EX_RANGE_FROM = "The first chapter of the part, as the number in its title."
+EX_RANGE_TO = "The last chapter of the part, as the number in its title."
+EX_ROW_BOX = "Tick the chapters of this row. Shift: everything translated between the last click and this one."
+EX_PROBLEM = ("A block of %s is not translated, so the chapter is left out of the file.",
+              [("Click", "Translate › Problems at this chapter")])
+EX_PROBLEMS = ("Blocks of %s are not translated, so these chapters are left out of the file.",
+               [("Click", "Translate › Problems at the first of them")])
+EX_PROBLEM_CHAPTER = "A block of this chapter is not translated, so it is left out of the file."
+EX_EXPORTED = ("Exported on %s.", [("File", "%s"), ("Click", "shows the file in its folder")])
+EX_GAP = ("Not translated yet.", [("Click", "selects these chapters in Books and opens Translate")])
+EX_RUN = ("Chapter %s is being written · %d %%.", [("Done", "chapters join the piece above as they are done")])
+EX_RUN_WAIT = ("The job translates these chapters now.", [("Done", "chapters join the piece above as they are done")])
+EX_PART = "%d of the %d translated chapters of this piece are ticked."
+EX_SUMMARY = "What goes into the file."
+EX_BTN_ONE = ("Export the %s translation of the ticked chapters as one EPUB.", [("Folder", "%s/out")])
+EX_BTN_BOTH = ("Export the same chapters in %s and %s: each %s paragraph followed by its %s original.",
+               [("Folder", "%s/out")])
+EX_BTN_NONE = "Tick at least one piece."
+EX_BTN_EMPTY = "Nothing translated in this volume yet."
+EX_BTN_LANGUAGE = "Choose the language to translate into (To, on Translate) first."
+EX_BTN_BUSY = "The file is being written. Esc stops it."
+EX_RESULT_LEFT = "Not translated yet, so left out of the file: %s."
+EX_NO_BOOK = "No book selected"
 
 # Translate: the top row (window 7.1, 7.12, 13.1)
 PER_REQUEST = ("How many blocks travel in one request. More blocks per request mean fewer requests of the daily "

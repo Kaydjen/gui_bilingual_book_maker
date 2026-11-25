@@ -123,10 +123,12 @@ Item {
                         dim: header.app.stepsDim
                         progress: cell.modelData.id === "terms" ? header.app.termsScan : -1
                         kind: cell.modelData.id === "terms" ? header.app.termsState
-                              : (cell.modelData.id === "translate" ? header.app.translateState : "")
+                              : (cell.modelData.id === "translate" ? header.app.translateState
+                                 : (cell.modelData.id === "export" ? header.app.exportState : ""))
                         tip: cell.modelData.id === "translate" ? header.app.translateTip
-                             : (cell.modelData.id === "terms" && header.app.termsState === "red" ? header.app.tips.termsRed
-                                : header.app.tips[cell.modelData.id])
+                             : (cell.modelData.id === "export" && header.app.exportState === "ready" ? header.app.tips.exportReady
+                                : (cell.modelData.id === "terms" && header.app.termsState === "red" ? header.app.tips.termsRed
+                                   : header.app.tips[cell.modelData.id]))
                         onClicked: header.stepClicked(cell.modelData.id)
                     }
                 }

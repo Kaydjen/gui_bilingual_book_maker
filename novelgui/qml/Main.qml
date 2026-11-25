@@ -46,6 +46,7 @@ Window {
         reader: readerVm
         terms: termsVm
         translate: translateVm
+        exporter: exportVm
     }
 
     Loader {

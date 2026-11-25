@@ -15,9 +15,9 @@ Item {
     Rectangle {
         anchors.fill: parent
         radius: 4
-        color: box.checked || box.dash ? Theme.bright : "transparent"
+        color: box.checked ? Theme.bright : (box.hot ? Theme.lift : "transparent")
         border.width: 1
-        border.color: box.checked || box.dash ? Theme.bright : (box.hot ? Theme.text : Theme.faint)
+        border.color: box.checked ? Theme.bright : (box.dash || box.hot ? Theme.dim : Theme.faint)
     }
     AppText {
         visible: box.checked
@@ -33,6 +33,6 @@ Item {
         anchors.centerIn: parent
         width: 8
         height: 2
-        color: Theme.bg
+        color: Theme.text
     }
 }

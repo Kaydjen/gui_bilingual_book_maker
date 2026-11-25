@@ -4,6 +4,7 @@ import Novel
 import Books
 import Terms
 import Translate
+import Export
 
 // The content of the main window: header, ONE screen at a time (placeholders for steps 5-8), the first-start block, the
 // panels (settings, closing, library not found), the message panel and the second-start notice. Everything it shows
@@ -21,6 +22,7 @@ AppRoot {
     property var reader: null
     property var terms: null
     property var translate: null
+    property var exporter: null
     property bool forceButtons: false
     readonly property bool ready: app !== null && app.libraryState === "ready"
 
@@ -102,6 +104,13 @@ AppRoot {
             objectName: "screen_export"
             anchors.fill: parent
             visible: root.app.screen === "export"
+            ExportScreen {
+                objectName: "exportScreen"
+                anchors.fill: parent
+                visible: root.ready
+                exp: root.exporter
+                app: root.app
+            }
         }
     }
 
@@ -153,6 +162,10 @@ AppRoot {
     PromptPanel {
         objectName: "promptPanel"
         translate: root.translate
+    }
+    ResultPanel {
+        objectName: "exportPanel"
+        exp: root.exporter
     }
     SettingsPanel {
         objectName: "settingsPanel"

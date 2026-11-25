@@ -538,6 +538,15 @@ class BooksVM(QObject):
             self._sel.select_all()
         self._push_selection()
 
+    @Slot("QVariantList")
+    def selectPositions(self, positions) -> None:
+        """These chapters become the selection (Export's `Translate ›`, 8.7); the list scrolls to the first one."""
+        ids = sorted({int(p) for p in positions if self._selectable(int(p))})
+        self._sel.set_selection(ids)
+        self._push_selection()
+        if ids:
+            self.scrollRequested.emit(ids[0])
+
     @Slot()
     def clearSelection(self) -> None:
         self._sel.clear()

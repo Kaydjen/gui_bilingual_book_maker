@@ -17,16 +17,17 @@ def position(number: int) -> int:
     return number - FIRST_NUMBER + 1
 
 
-def knights(translated: int = 0, blocked=(), chosen: bool = True, chapters: int = 170, keep_terms: bool = True, paras: int = 3, **kw) -> dict:
+def knights(translated: int = 0, blocked=(), chosen: bool = True, chapters: int = 170, keep_terms: bool = True, paras: int = 3, done=(), **kw) -> dict:
     """`translated`: the first k chapters are translated. `blocked`: title numbers of chapters that mention an
-    unconfirmed name (one name per chapter, `Name<number>`). Everything else in the base is confirmed."""
+    unconfirmed name (one name per chapter, `Name<number>`). Everything else in the base is confirmed. `done`: [first,
+    last] title-number ranges that are fully translated (any places)."""
     mentions = {str(n): ["Name%d" % n] for n in blocked}
     terms = []
     for n in blocked:
         terms.append({"src": "Name%d" % n, "tr": "Имя%d" % n, "type": "character", "gender": "male", "status": "new",
                       "seen": [position(n)], "count": 3})
     spec = {"name": "Knights", "books": [{"stem": "Book 1", "chapters": chapters, "start": FIRST_NUMBER, "paras": paras,
-                                         "translated": translated, "mentions": mentions}]}
+                                         "translated": translated, "mentions": mentions, "done": [list(d) for d in done]}]}
     if keep_terms and terms:
         spec["terms"] = terms
     if not chosen:
