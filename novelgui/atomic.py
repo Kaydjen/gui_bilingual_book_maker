@@ -13,6 +13,8 @@ import threading
 import time
 from pathlib import Path
 
+from . import platform
+
 
 def write_bytes(path, data: bytes, bak: bool = False) -> None:
     """Replace `path` with `data` atomically. Raises OSError when it cannot be written (the old file stays)."""
@@ -58,6 +60,6 @@ def replace(src, dst, attempts: int = 8) -> None:
             os.replace(src, dst)
             return
         except PermissionError:
-            if os.name != "nt" or attempt == attempts - 1:
+            if not platform.IS_WINDOWS or attempt == attempts - 1:
                 raise
             time.sleep(0.02 * (attempt + 1))

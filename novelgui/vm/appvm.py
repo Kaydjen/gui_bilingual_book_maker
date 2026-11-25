@@ -273,7 +273,11 @@ class AppVM(QObject):
                 "termsRed": tips.PATH_TERMS_RED, "firstPath": _tip(tips.FIRST_START_FOLDER),
                 "missingFolder": tips.LIBRARY_NOT_FOUND_FOLDER, "keysHead": _tip(tips.KEYS_HEAD),
                 "keysPlus": _tip(tips.KEYS_PLUS), "modelsHead": tips.MODELS_HEAD, "paceRow": _tip(tips.PACE_ROW),
-                "appData": _tip(tips.APP_DATA_ROW), "graphics": tips.GRAPHICS_ROW, "logButton": tips.LOG_BUTTON}
+                "appData": _tip(tips.APP_DATA_ROW), "graphics": tips.GRAPHICS_ROW, "logButton": tips.LOG_BUTTON,
+                "firstCreate": tips.FIRST_START_CREATE, "modelsPlus": tips.MODELS_PLUS, "paceInvalid": tips.PACE_INVALID,
+                "appDataOpen": tips.APP_DATA_OPEN, "panelClose": tips.PANEL_CLOSE, "closeNow": tips.CLOSE_NOW,
+                "keyRemove": tips.KEY_REMOVE, "modelEdit": tips.MODEL_EDIT, "modelUp": tips.MODEL_UP,
+                "modelDown": tips.MODEL_DOWN, "modelRemove": tips.MODEL_REMOVE}
 
     @Slot("QVariantMap")
     def setRun(self, data):

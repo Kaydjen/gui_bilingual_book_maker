@@ -642,7 +642,7 @@ class BooksVM(QObject):
         many = len(info.books) > 1
         return [{"text": "Rename %s" % label, "id": "rename:" + stem},
                 {"text": "Remove %s" % label, "id": "remove:" + stem, "kind": "off" if busy else "",
-                 "tip": tips.CANNOT_NOW % "A job of this book is running." if busy else ""},
+                 "tip": tips.CANNOT_NOW % tips.JOB_OF_BOOK if busy else ""},
                 {"text": "Move %s to series…" % label, "id": "move:" + stem,
                  "kind": "off" if translated or busy or len(self.infos) < 2 else "", "many": many,
                  "tip": tips.MOVE_OFF if translated else ""},
@@ -663,7 +663,7 @@ class BooksVM(QObject):
         if not info.broken:
             items.insert(0, {"text": "Rename series", "id": "rename:" + info.path})
         items.append({"text": "Delete series", "id": "delete:" + info.path, "kind": "off" if busy else "",
-                      "tip": tips.CANNOT_NOW % "A job of this series is running." if busy else ""})
+                      "tip": tips.CANNOT_NOW % tips.JOB_OF_SERIES if busy else ""})
         if not info.broken and len(info.books) == 1:
             items.append({"kind": "divider", "text": ""})
             items.extend(self._book_items(info, info.books[0]))

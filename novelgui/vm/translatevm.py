@@ -191,8 +191,8 @@ class TranslateVM(QObject):
                 "queueDown": t.TR_QUEUE_DOWN, "queueRemove": t.TR_QUEUE_X, "queueStop": t.TR_QUEUE_STOP,
                 "problemRetry": t.TR_PROBLEM["retry"], "problemKeep": t.TR_PROBLEM["keep"],
                 "problemIgnore": t.TR_PROBLEM["ignore"], "problemSave": t.TR_PROBLEM["save"],
-                "promptText": "The instructions sent with every request. {language} is replaced by the series language.",
-                "promptNothing": "Nothing changed yet.", "problemFailed": t.TR_PROBLEM["failed"],
+                "promptText": t.TR_PROMPT_TEXT, "promptNothing": t.TR_PROMPT_NOTHING,
+                "promptDraft": t.TR_PROMPT_DRAFT, "problemFailed": t.TR_PROBLEM["failed"],
                 "problemBusy": t.TR_PROBLEM["busy"], "dontResume": t.TR_BAR["dont_resume"] % "the return time",
                 "more": t.TR_BAR["more"], "readOff": t.READ_OFF}
 

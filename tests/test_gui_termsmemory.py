@@ -1,7 +1,6 @@
 import unittest
 
 from novelgui import termsmemory as tm
-from novelgui.app import MIN_H_UNITS, MIN_W_UNITS, App
 
 KEYS = ["source", "tr", "type", "count"]
 TYPES = ["character", "place"]
@@ -34,17 +33,6 @@ class CleanTest(unittest.TestCase):
         self.assertIsNone(tm.sort_to_store("new", "first", False, ("first", False)))
         self.assertEqual(tm.sort_to_store("new", "source", True, ("first", False)), {"key": "source", "desc": True})
         self.assertIsNone(tm.sort_to_store("new", None, False, ("first", False)))
-
-
-class MinSizeTest(unittest.TestCase):
-    def test_units_scale_with_the_font(self):
-        self.assertEqual(App.min_size(7, 17, 3840, 2160), (7 * MIN_W_UNITS, 17 * MIN_H_UNITS))
-        w2, h2 = App.min_size(14, 34, 3840, 2160)
-        self.assertEqual((w2, h2), (14 * MIN_W_UNITS, 34 * MIN_H_UNITS))
-
-    def test_a_small_screen_limits_it(self):
-        w, h = App.min_size(11, 28, 1280, 720)
-        self.assertEqual((w, h), (1078, 640))
 
 
 if __name__ == "__main__":

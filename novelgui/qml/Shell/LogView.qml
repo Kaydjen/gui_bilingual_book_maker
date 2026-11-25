@@ -27,7 +27,7 @@ Item {
             objectName: "logCopy"
             y: 1
             text: "Copy"
-            tip: "Copy the lines shown to the clipboard."
+            tip: view.log.tips.copy
             onClicked: view.log.copy()
         }
         Pill {

@@ -41,7 +41,7 @@ Item {
                 color: closeHover.hovered ? Theme.bright : Theme.dim
                 HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: tab.reader.close() }
-                TipArea { tip: "Close the reader" }
+                TipArea { tip: tab.reader.tips.close }
             }
         }
     }
@@ -73,7 +73,7 @@ Item {
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
                 text: tab.reader.version + " ▾"
-                tip: "The version of this chapter you read. Hand edits will add versions."
+                tip: tab.reader.tips.version
                 onClicked: tab.openVersions(this)
             }
             Rectangle {
@@ -122,7 +122,7 @@ Item {
                     wrapMode: Text.Wrap
                     text: pair.target !== "" ? pair.target : "—"
                     color: pair.target !== "" ? Theme.text : Theme.faint
-                    TipArea { tip: "Editing a finished block comes with a later program change." }
+                    TipArea { tip: tab.reader.tips.edit }
                 }
                 AppText {
                     visible: pair.mark !== ""

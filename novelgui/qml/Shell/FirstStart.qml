@@ -74,7 +74,7 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "Create"
             kind: pathInput.text.trim() === "" ? "off" : "accent"
-            tip: "Use this folder as the library."
+            tip: first.app.tips.firstCreate
             onClicked: first.create()
         }
     }

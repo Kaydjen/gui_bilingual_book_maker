@@ -11,6 +11,7 @@ from pathlib import Path
 from PySide6.QtCore import Property, QAbstractListModel, QModelIndex, QObject, Qt, Signal, Slot
 
 from .. import chapterlogic as cl
+from .. import tips
 from ..facade import books as fbooks
 
 ROLES = ("source", "target", "mark", "block")
@@ -18,15 +19,13 @@ ROLES = ("source", "target", "mark", "block")
 
 def pairs_task(ctx, series_path, book: str, index: int) -> dict:
     """{title, number, pairs: [(block index, source, translation, mark)]} of one chapter."""
-    from novelcore.htmlscan import strip_markers
-    from novelcore.store import read_jsonl
     bk = fbooks.open_book(fbooks.book_file(series_path, book))
     ch = bk.chapters[index]
     blocks = bk.blocks(ch)
     lpath = fbooks.log_file(series_path, book, index, ch.href)
     last: dict = {}
     if lpath.exists():
-        for r in read_jsonl(lpath):
+        for r in fbooks.read_jsonl(lpath):
             last[(r.get("i"), cl.short_sha(r.get("src_sha")))] = r
     pairs = []
     for b in blocks:
@@ -38,7 +37,7 @@ def pairs_task(ctx, series_path, book: str, index: int) -> dict:
                 mark = ", ".join(str(f) for f in rec.get("flags") or [])
             else:
                 mark = "failed"
-        pairs.append((b.index, strip_markers(b.text), target, mark))
+        pairs.append((b.index, fbooks.strip_markers(b.text), target, mark))
         ctx.breathe()
     title = ch.title or ""
     return {"title": title, "number": cl.title_number(title) or cl.display_no(index), "pairs": pairs}
@@ -83,6 +82,10 @@ class ReaderVM(QObject):
         self._number = 0
         self._error = ""
         self._where = ""
+
+    @Property("QVariantMap", constant=True)
+    def tips(self):
+        return {"close": tips.READER_CLOSE, "version": tips.READER_VERSION, "edit": tips.READER_EDIT}
 
     @Property(QObject, constant=True)
     def blocks(self):

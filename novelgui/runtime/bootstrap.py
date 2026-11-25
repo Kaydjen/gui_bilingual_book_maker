@@ -16,6 +16,8 @@ import subprocess
 import sys
 import tempfile
 
+from .. import platform
+
 IS_WINDOWS = sys.platform == "win32"
 VENV_NAME = ".venv-window"
 REQUIREMENTS = "requirements-window.txt"
@@ -40,13 +42,8 @@ def message(text: str) -> None:
         except OSError:
             pass
         return
-    if IS_WINDOWS:
-        try:
-            import ctypes
-            ctypes.windll.user32.MessageBoxW(None, text, TITLE, 0x10)
-            return
-        except (AttributeError, OSError):
-            pass
+    if platform.message_box(text, TITLE):
+        return
     if sys.stderr is not None:
         try:
             sys.stderr.write(text + "\n")
@@ -64,9 +61,7 @@ def venv_dir(root: str) -> str:
 
 
 def venv_python(root: str, windowed: bool = False) -> str:
-    if IS_WINDOWS:
-        return os.path.join(venv_dir(root), "Scripts", "pythonw.exe" if windowed else "python.exe")
-    return os.path.join(venv_dir(root), "bin", "python")
+    return platform.venv_python(venv_dir(root), windowed)
 
 
 def requirements_hash(root: str) -> str:
@@ -87,24 +82,16 @@ def venv_ready(root: str) -> bool:
 def _run_python(exe: str) -> tuple | None:
     try:
         out = subprocess.run([exe, "-c", "import sys;print('%d.%d' % sys.version_info[:2])"], capture_output=True,
-                             text=True, timeout=30, creationflags=_no_window()).stdout.strip()
+                             text=True, timeout=30, **platform.no_window()).stdout.strip()
         major, minor = out.split(".")
         return int(major), int(minor)
     except (OSError, ValueError, subprocess.SubprocessError):
         return None
 
 
-def _no_window() -> int:
-    return 0x08000000 if IS_WINDOWS else 0      # CREATE_NO_WINDOW
-
-
 def find_python() -> str | None:
     """A Python 3.11+ to build the environment with: this one when it is new enough, else one found on the PC."""
-    exe = sys.executable or ""
-    if IS_WINDOWS and exe.lower().endswith("pythonw.exe"):
-        console = exe[:-len("pythonw.exe")] + "python.exe"
-        if os.path.isfile(console):
-            exe = console
+    exe = platform.console_python(sys.executable or "")
     if sys.version_info >= MIN_PYTHON and exe:
         return exe
     candidates = []
@@ -115,7 +102,7 @@ def find_python() -> str | None:
                 try:
                     out = subprocess.run([launcher, "-3.%d" % minor, "-c", "import sys;print(sys.executable)"],
                                          capture_output=True, text=True, timeout=30,
-                                         creationflags=_no_window()).stdout.strip()
+                                         **platform.no_window()).stdout.strip()
                 except (OSError, subprocess.SubprocessError):
                     continue
                 if out and os.path.isfile(out):
@@ -154,21 +141,21 @@ def make_venv(root: str) -> bool:
     if os.path.exists(target):          # a file in use: try once more the slow way
         shutil.rmtree(target, ignore_errors=True)
     log_path = os.path.join(tempfile.gettempdir(), "novel-window-setup.log")
-    flags = _no_window()
+    flags = platform.no_window()
     try:
         with open(log_path, "w", encoding="utf-8", errors="replace") as log:
             made = subprocess.call([python, "-m", "venv", target], stdout=log, stderr=subprocess.STDOUT,
-                                   creationflags=flags)
+                                   **flags)
             if made != 0:
                 message(MSG_VENV % target)
                 return False
             cmd = [venv_python(root), "-m", "pip", "install", "--disable-pip-version-check", "--require-hashes",
                    "-r", os.path.join(root, REQUIREMENTS)]
             if os.environ.get("NOVELGUI_MESSAGE_FILE"):          # scripted run: quiet, into the log
-                pip = subprocess.call(cmd, stdout=log, stderr=subprocess.STDOUT, creationflags=flags, cwd=root)
+                pip = subprocess.call(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=root, **flags)
             elif IS_WINDOWS:                                       # first start: show the download in a console
                 pip = subprocess.call(["cmd", "/c", "title", MSG_FIRST, "&&"] + cmd,
-                                      creationflags=0x00000010, cwd=root)     # CREATE_NEW_CONSOLE
+                                      cwd=root, **platform.new_console())
             else:
                 if sys.stderr is not None:
                     sys.stderr.write(MSG_FIRST + "\n")
@@ -202,7 +189,7 @@ def launch(argv, root: str | None = None) -> int:
     cmd = [venv_python(root, windowed=True), "-m", "novelgui"] + list(argv)
     if IS_WINDOWS:
         try:
-            subprocess.Popen(cmd, cwd=root, creationflags=0x00000008)      # DETACHED_PROCESS
+            subprocess.Popen(cmd, cwd=root, **platform.detached())
         except OSError:
             message(MSG_VENV % venv_dir(root))
             return 1

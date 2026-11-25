@@ -16,6 +16,20 @@ On the first start the button reads **Install engine**. It downloads the newest 
 creates a private environment for it in the app's data folder and installs the pinned packages.
 **Settings → Update** installs a newer release later. Any other engine folder can be chosen in Settings.
 
+## New window
+
+The new window (Books, Terms, Translate, Export) is built with PySide6 and Qt Quick. It translates with Gemini
+directly and does not use the engine above.
+
+Start it with **novel.bat** (Windows), `pyw novel.pyw` or `./novel.sh` (Linux, macOS). The first start makes the
+environment `.venv-window` in this folder and installs PySide6 into it, which takes about a minute and needs an
+internet connection; later starts open the window at once. On Linux the Qt platform plugin needs the package
+`libxcb-cursor0`. From a terminal inside that environment: `python -m novelgui`.
+
+Tests: `PYTHONUTF8=1 python -m unittest discover tests`. The window tests need PySide6, so run them with the
+interpreter of `.venv-window` (`.venv-window/Scripts/python` on Windows, `.venv-window/bin/python` elsewhere); they
+use an offscreen Qt platform and a fake Gemini server, so no window opens and no real requests are sent.
+
 ## What it does
 
 - Pick a book (epub, txt, srt, md, pdf), the target language, and **Bilingual** or **Translation only**.

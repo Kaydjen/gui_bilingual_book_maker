@@ -38,8 +38,7 @@ FIELDS = {"ren": "tr", "about": "note"}
 
 
 def _tips() -> dict:
-    return {"nolang": termtips.NO_LANGUAGE, "confirmTicked": "Confirm the ticked terms as they are (rows with two values or "
-            "without a rendering stay; a confirmed term keeps the value in use).", "merge": termtips.MERGE,
+    return {"nolang": termtips.NO_LANGUAGE, "confirmTicked": termtips.CONFIRM_TICKED, "merge": termtips.MERGE,
             "notATerm": termtips.NOT_A_TERM, "scanning": termtips.SCANNING, "goTranslate": "%s",
             "confirmN": termtips.confirm_tip}
 
@@ -350,8 +349,8 @@ class TermsVM(QObject):
                 "toEmpty": termtips.HEAD_TO_EMPTY, "type": termtips.HEAD_TYPE, "noLang": termtips.NO_LANGUAGE,
                 "slot": termtips.NO_RENDERING, "unknown": list(self._unknown()), "prev": termtips.PREV_PLACE,
                 "next": termtips.NEXT_PLACE, "importGoes": termtips.IMPORT_GOES, "importWhere": termtips.IMPORT_WHERE,
-                "neuter": termtips.NEUTER, "scanning": termtips.SCANNING, "emptyImport": "Add terms from a glossary file "
-                "(JSON). Only adds, never replaces."}
+                "neuter": termtips.NEUTER, "scanning": termtips.SCANNING, "emptyImport": termtips.EMPTY_IMPORT,
+                "importedChip": termtips.IMPORTED_CHIP}
 
     @staticmethod
     def _unknown():

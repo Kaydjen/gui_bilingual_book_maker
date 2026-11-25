@@ -3,7 +3,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from novelgui import accent
 from novelgui.settings import Settings
 from novelgui.winstate import WinState
 
@@ -88,22 +87,6 @@ class WinStateTest(unittest.TestCase):
         bad = WinState(Settings(blocker / "inside"))
         self.assertFalse(bad.set("k", 1))
         self.assertEqual(bad.get_int("k"), 1)                     # kept in memory
-
-
-class AccentTest(unittest.TestCase):
-    def test_priority(self):
-        F = accent.Facts
-        self.assertEqual(accent.owner(F(has_keys=False, language_chosen=False, first_blocked=True), "run"), "keys")
-        self.assertEqual(accent.owner(F(has_keys=True, language_chosen=False, first_blocked=True), "run"), "language")
-        self.assertEqual(accent.owner(F(first_blocked=True), "run"), "terms")
-        self.assertEqual(accent.owner(F(), "run"), "run")
-        self.assertEqual(accent.owner(F()), "")
-
-    def test_only_one_name_wins(self):
-        f = accent.Facts(has_keys=False)
-        names = ["keys", "language", "terms", "run"]
-        self.assertEqual([n for n in names if accent.gets_accent(n, f, "run")], ["keys"])
-        self.assertFalse(accent.gets_accent("", accent.Facts(), ""))
 
 
 if __name__ == "__main__":

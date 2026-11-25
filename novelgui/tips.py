@@ -283,7 +283,25 @@ GRAPHICS_ROW = ("Auto uses the graphics card. Software draws on the processor: s
                 "stays empty or flickers. Applies from the next start.")
 LOG_BUTTON = "The log of this window: what it did and every problem, without keys."
 
+# Settings, keys, models, log, first start: the small controls (their text was inline in QML)
+KEY_REMOVE = "Remove this key"
+MODEL_EDIT = "Double-click: edit the name (Google renames models now and then)."
+MODEL_UP, MODEL_DOWN = "Move up", "Move down"
+MODEL_REMOVE = "Remove this model"
+PACE_INVALID = "1 to 120"
+APP_DATA_OPEN = "Open the folder"
+PANEL_CLOSE = "Close (Esc)"
+LOG_COPY = "Copy the lines shown to the clipboard."
+CLOSE_NOW = "Quit now. Only these requests are lost; Continue repeats them next time."
+
+# Reader
+READER_CLOSE = "Close the reader"
+READER_VERSION = "The version of this chapter you read. Hand edits will add versions."
+READER_EDIT = "Editing a finished block comes with a later program change."
+
 # Books v6 (step 5)
+JOB_OF_BOOK = "A job of this book is running."
+JOB_OF_SERIES = "A job of this series is running."
 ADD_BOOK_PLUS = "Add book"
 CHAPTERS_HEAD = ("Select all chapters, or none. Type numbers on the list to select a range.", [])
 CHAPTER_STATE = ("How much of the chapter is translated.", [("Full line", "every block is translated")])
@@ -314,6 +332,9 @@ TR_WORDS = {
     "problems": "Blocks that failed or that a check flagged. Click: the Problems tab.",
 }
 TR_TO_LOCKED_RUN = "The language is fixed while this series translates."
+TR_PROMPT_TEXT = "The instructions sent with every request. {language} is replaced by the series language."
+TR_PROMPT_NOTHING = "Nothing changed yet."
+TR_PROMPT_DRAFT = "Unsaved text from the last time. Cancel throws it away."
 TR_FROM = "The language of the book. Reserved: it is read from the file."
 TR_PROMPT = "How the model is asked to translate. Choose another or make a new one."
 TR_PROMPT_EDIT = "Edit the prompt %s. A saved prompt applies from the next chapter, also during a run."

@@ -71,7 +71,7 @@ Item {
                 color: chipHover.hovered ? Theme.bright : Theme.dim
                 HoverHandler { id: chipHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: screen.terms.clearImported() }
-                TipArea { tip: "Only the " + screen.terms.importedCount + " terms of the last import. ✕ or Esc: all terms." }
+                TipArea { tip: screen.terms.tips.importedChip.replace("%d", screen.terms.importedCount) }
             }
         }
         Row {

@@ -89,7 +89,7 @@ FocusScope {
             }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: panel.close() }
-            TipArea { tip: "Close (Esc)" }
+            TipArea { tip: panel.app.tips.panelClose }
         }
         ScrollAssist {
             flickable: scroll
@@ -153,6 +153,7 @@ FocusScope {
                         interactive: false
                         model: panel.vm.keys
                         delegate: KeyRow {
+                            tips: panel.app.tips
                             onRemoveClicked: panel.vm.removeKey(index)
                         }
                     }
@@ -181,7 +182,7 @@ FocusScope {
                     text: "MODELS"
                     plus: true
                     tip: panel.app.tips.modelsHead
-                    plusTip: "Add a model"
+                    plusTip: panel.app.tips.modelsPlus
                     onPlusClicked: {
                         panel.vm.loadGoogle()
                         modelDd.entries = panel.vm.modelEntries("")
@@ -205,6 +206,7 @@ FocusScope {
                         interactive: false
                         model: panel.vm.modelRows
                         delegate: ModelRow {
+                            tips: panel.app.tips
                             onMoveClicked: delta => panel.vm.moveModel(index, delta)
                             onRemoveClicked: panel.vm.removeModel(index)
                             onRenamed: text => panel.vm.renameModel(index, text)
@@ -250,7 +252,7 @@ FocusScope {
                             value: panel.vm.pace
                             keepOpen: true
                             validate: t => panel.vm.setPace(t)
-                            invalidTip: "1 to 120"
+                            invalidTip: panel.app.tips.paceInvalid
                             onEditingChanged: {
                                 if (!editing) {
                                     input.text = panel.vm.pace
@@ -319,7 +321,7 @@ FocusScope {
                     name: "App data" + (panel.vm.appDataText !== "" ? " · " + panel.vm.appDataText : "")
                     action: "Open folder"
                     nameTip: panel.app.tips.appData
-                    actionTip: "Open the folder"
+                    actionTip: panel.app.tips.appDataOpen
                     onNameClicked: panel.vm.openAppData()
                     onActionClicked: panel.vm.openAppData()
                 }

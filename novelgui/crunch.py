@@ -26,7 +26,7 @@ import threading
 import time
 import traceback
 
-from . import wire
+from . import platform, wire
 from .facade import books, checks, terms, translate
 from .lanes import Token, Want
 
@@ -66,30 +66,7 @@ TASKS = {
 
 # ---------------------------------------------------------------- the parent
 def pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    if os.name == "nt":
-        import ctypes
-        from ctypes import wintypes
-        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        k32.OpenProcess.restype = wintypes.HANDLE
-        k32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
-        k32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
-        k32.CloseHandle.argtypes = (wintypes.HANDLE,)
-        h = k32.OpenProcess(0x00100000 | 0x1000, False, pid)     # SYNCHRONIZE | QUERY_LIMITED_INFORMATION
-        if not h:
-            return ctypes.get_last_error() == 5                  # access denied: it exists
-        try:
-            return k32.WaitForSingleObject(h, 0) == 0x102        # WAIT_TIMEOUT: still running
-        finally:
-            k32.CloseHandle(h)
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return platform.pid_alive(pid)
 
 
 class _Parent:
@@ -104,7 +81,7 @@ class _Parent:
         now = time.monotonic()
         if now >= self._next:
             self._next = now + PARENT_CHECK
-            if os.name != "nt" and os.getppid() != self.pid:
+            if not platform.IS_WINDOWS and os.getppid() != self.pid:
                 self._alive = False
             elif not pid_alive(self.pid):
                 self._alive = False
