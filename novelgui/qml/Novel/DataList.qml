@@ -140,6 +140,10 @@ FocusScope {
         onWidthChanged: table.columnSet.available = width - 12 - 16
         Component.onCompleted: table.columnSet.available = width - 12 - 16
     }
+    ScrollAssist {
+        objectName: "tableScroll"
+        flickable: listView
+    }
     Fades {
         flickable: listView
         topOffset: table.header ? table.headerHeight + 2 : 0

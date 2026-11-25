@@ -3,7 +3,8 @@ import QtQuick
 
 // A drop-down card (mock dd): optional typing filter, group headings, items; the current item is bright with a short bar
 // at its left edge. entries: {group: "Heading"} | {text, id, note, current, off}. Typing fires filterChanged(text):
-// the owner narrows `entries` (the hook), nothing is filtered here. Up / Down / Enter / Esc work from the keyboard.
+// the owner narrows `entries` (the hook), nothing is filtered here. Up / Down / Enter / Esc work from the keyboard;
+// with typed text and nothing highlighted Enter takes the first match.
 Floating {
     id: dd
 
@@ -31,6 +32,12 @@ Floating {
                 return
             }
         }
+    }
+    function enter() {
+        if (hot < 0 && filterText !== "")
+            step(1)                     // typed text: Enter takes the first match (a new name's `+` entry included)
+        if (hot >= 0)
+            pick(hot)
     }
     function pick(i) {
         var e = entries[i]
@@ -84,7 +91,8 @@ Floating {
                 }
                 Keys.onDownPressed: dd.step(1)
                 Keys.onUpPressed: dd.step(-1)
-                Keys.onReturnPressed: if (dd.hot >= 0) dd.pick(dd.hot)
+                Keys.onReturnPressed: dd.enter()
+                Keys.onEnterPressed: dd.enter()
                 Keys.onEscapePressed: dd.close()
             }
         }
@@ -170,5 +178,6 @@ Floating {
     }
     Keys.onDownPressed: step(1)
     Keys.onUpPressed: step(-1)
-    Keys.onReturnPressed: if (hot >= 0) pick(hot)
+    Keys.onReturnPressed: enter()
+    Keys.onEnterPressed: enter()
 }

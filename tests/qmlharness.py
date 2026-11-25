@@ -288,7 +288,7 @@ def _child(req: dict) -> int:
                 p = o.mapToScene(QPointF(0, 0))
                 d.update(x=p.x(), y=p.y(), w=o.width(), h=o.height(), visible=o.isVisible(), opacity=o.opacity())
             for prop in ("text", "color", "radius", "running", "enabled", "currentIndex", "value", "selected", "current",
-                         "contentY", "contentHeight", "count", "kind", "activeFocus", "live", "checked", "settled", "fraction"):
+                         "contentY", "contentHeight", "count", "kind", "activeFocus", "live", "checked", "settled", "fraction", "auto"):
                 v = o.property(prop)
                 if v is not None:
                     d[prop] = val(v)
@@ -366,6 +366,20 @@ def _child(req: dict) -> int:
             QTest.mouseMove(view, center(a["name"]) if "name" in a else QPoint(a["x"], a["y"]))
         elif op == "release":
             QTest.mouseRelease(view, Qt.LeftButton, Qt.NoModifier, center(a["name"]) if "name" in a else QPoint(a["x"], a["y"]))
+        elif op == "wheel":
+            from PySide6.QtGui import QWheelEvent
+            pos = QPointF(center(a["name"]))
+            ev = QWheelEvent(pos, QPointF(view.mapToGlobal(pos.toPoint())), QPoint(0, 0), QPoint(0, a["dy"]),
+                             Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False)
+            QGuiApplication.sendEvent(view, ev)
+        elif op in ("midPress", "midMove", "midRelease"):
+            pos = center(a["name"]) + QPoint(0, a.get("dy", 0))
+            if op == "midPress":
+                QTest.mousePress(view, Qt.MiddleButton, Qt.NoModifier, pos)
+            elif op == "midMove":
+                QTest.mouseMove(view, pos)
+            else:
+                QTest.mouseRelease(view, Qt.MiddleButton, Qt.NoModifier, pos)
         elif op == "key":
             QTest.keyClick(view, keys[a["key"]], mods[a.get("mod", "")])
         elif op == "type":

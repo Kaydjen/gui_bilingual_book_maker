@@ -36,6 +36,10 @@ Item {
             onMenuRequested: (x, y) => pane.menuRequested(item.index, item, x, y)
         }
     }
+    ScrollAssist {
+        objectName: "seriesScroll"
+        flickable: view
+    }
     Fades {
         flickable: view
         color: Theme.s1

@@ -3,8 +3,9 @@ import QtQuick
 import Novel
 
 // Settings v4 (window_spec 11.7): KEYS and MODELS with `+` at the heading's right end, the TRANSLATION rows as sentences
-// (control first), the LIBRARY, APP DATA and GRAPHICS rows, the flat `Log` button and the dim saved line in the foot.
-// Every change saves at once and the changed row glows once.
+// (control first), the LIBRARY, APP DATA and GRAPHICS rows and the flat `Log` button at the end of the scrolled content.
+// Every change saves at once, the changed row glows once and the dim saved line shows at the top centre of the card
+// (owner 2026-11-19: seen while the settings scroll; nothing shifts).
 FocusScope {
     id: panel
 
@@ -26,7 +27,7 @@ FocusScope {
         var t = rows[name]
         if (!t)
             return
-        var p = t.mapToItem(content, 0, 0)
+        var p = t.mapToItem(scroll.contentItem, 0, 0)
         glowRect.x = p.x - 4
         glowRect.y = p.y - 3
         glowRect.width = t.width + 8
@@ -66,7 +67,7 @@ FocusScope {
         objectName: "settingsCard"
         anchors.centerIn: parent
         width: Math.min(540, panel.width - 40)
-        height: Math.min(panel.height - 40, 20 + content.height + 12 + foot.height + 16)
+        height: Math.min(panel.height - 40, 20 + content.height + 16)
         level: 3
         radius: Theme.rPanel
         color: Theme.panel
@@ -90,6 +91,9 @@ FocusScope {
             TapHandler { onTapped: panel.close() }
             TipArea { tip: "Close (Esc)" }
         }
+        ScrollAssist {
+            flickable: scroll
+        }
         Item {
             x: scroll.x
             y: scroll.y
@@ -108,7 +112,7 @@ FocusScope {
             x: 22
             y: 20
             width: panel.innerWidth
-            height: parent.height - 20 - foot.height - 28
+            height: parent.height - 20 - 16
             contentHeight: content.height
             clip: true
             interactive: contentHeight > height
@@ -333,11 +337,19 @@ FocusScope {
                         onActivated: index => panel.vm.setGraphics(index === 1 ? "software" : "auto")
                     }
                 }
-                Item { width: 1; height: 8 }
+                Item { width: 1; height: 10 }
+                Pill {
+                    objectName: "settingsLog"
+                    kind: "flat"
+                    text: "Log"
+                    tip: panel.app.tips.logButton
+                    onClicked: panel.app.openLog()
+                }
+                Item { width: 1; height: 4 }
             }
             Rectangle {
                 id: glowRect
-                parent: content
+                parent: scroll.contentItem       // not inside the Column: a positioned child would take a slot
                 z: -1
                 visible: opacity > 0
                 opacity: 0
@@ -350,33 +362,20 @@ FocusScope {
                 }
             }
         }
-        Item {
-            id: foot
-            objectName: "settingsFoot"
-            x: 22
-            width: panel.innerWidth
-            height: Theme.pillHeight
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: 16
-            Pill {
-                objectName: "settingsLog"
-                kind: "flat"
-                text: "Log"
-                tip: panel.app.tips.logButton
-                onClicked: panel.app.openLog()
-            }
-            AppText {
-                objectName: "savedLine"
-                anchors.verticalCenter: parent.verticalCenter
-                x: 70
-                width: parent.width - 70
-                text: panel.vm.saved
-                color: Theme.dim
-                font.pixelSize: 12
-                elide: Text.ElideRight
-                opacity: panel.vm.saved !== "" ? 1 : 0
-                Behavior on opacity { NumberAnimation { duration: 250 } }
-            }
+        AppText {
+            objectName: "savedLine"
+            x: 44
+            y: 10
+            z: 3
+            width: parent.width - 88
+            height: 26
+            horizontalAlignment: Text.AlignHCenter
+            text: panel.vm.saved
+            color: Theme.dim
+            font.pixelSize: 12
+            elide: Text.ElideRight
+            opacity: panel.vm.saved !== "" ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: 250 } }
         }
     }
     DropDown {

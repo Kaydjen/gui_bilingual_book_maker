@@ -135,6 +135,9 @@ Item {
                 }
             }
         }
+        ScrollAssist {
+            flickable: pairs
+        }
         Fades {
             flickable: pairs
             color: Theme.s1

@@ -126,13 +126,14 @@ Item {
         }
     }
 
-    // the hot zone left of the gear (about 130 x 10 px)
+    // the hot zone left of the gear (owner 2026-11-19: taller than the first 10 px, about half the header)
     Item {
         id: hot
-        x: gear.x - 130
+        objectName: "titleHotZone"
+        x: gear.x - 140
         y: 0
-        width: 130
-        height: 10
+        width: 140
+        height: 24
         visible: header.custom
         HoverHandler { id: zone }
     }
