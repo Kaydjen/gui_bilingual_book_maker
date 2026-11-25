@@ -11,6 +11,8 @@ import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from . import atomic
+
 # ---------------------------------------------------------------- title numbers
 _WORD_NUMBER = re.compile(r"(?:chapter|глава|ch\.?)\s*[#№.:-]?\s*(\d+)", re.I)
 _FIRST_NUMBER = re.compile(r"\d+")
@@ -134,6 +136,33 @@ def count_log(records) -> tuple[int, int]:
     return done, len(last) - done
 
 
+SHA_LEN = 16    # leading hex digits of a block's source hash kept in the cache (enough to tell versions apart)
+
+
+def short_sha(sha) -> str:
+    return str(sha or "")[:SHA_LEN]
+
+
+def count_log_by_hash(records, shas) -> tuple[int, int]:
+    """(done, failed) block counts of a chapter log against the CURRENT blocks of the chapter (window_spec
+    14.12): a block counts only by a record of its own (index, source hash), the latest such record decides. An
+    ok line left from an older text of the block (changed by Update file) does not count. `shas[i]` is the
+    (short) hash of block i; records of indices outside the chapter are ignored."""
+    last: dict[tuple[int, str], str] = {}
+    for r in records:
+        last[(r["i"], short_sha(r.get("src_sha")))] = r.get("status", "")
+    done = failed = 0
+    for i, sha in enumerate(shas):
+        st = last.get((i, short_sha(sha)))
+        if st is None:
+            continue
+        if st == "ok":
+            done += 1
+        else:
+            failed += 1
+    return done, failed
+
+
 def chapter_state(is_toc, blocks, done: int, failed: int) -> State:
     """State of one chapter from its block count (None while unknown) and log counts."""
     if is_toc:
@@ -160,6 +189,7 @@ class ChapterInfo:
     log_sig: tuple = (0, 0)     # (size, mtime_ns) of the chapter log the counts belong to
     done: int = 0
     failed: int = 0
+    shas: tuple | None = None   # short source hashes of the blocks (None = unknown); never sent to a screen
 
     @property
     def state(self) -> State:
@@ -175,6 +205,10 @@ class ChapterInfo:
 
     def copy(self) -> "ChapterInfo":
         return replace(self)
+
+    def public(self) -> "ChapterInfo":
+        """A copy without the block hashes (what a screen gets)."""
+        return replace(self, shas=None)
 
 
 def selection_size(infos, indices) -> tuple[int, int, bool]:
@@ -192,7 +226,7 @@ def selection_size(infos, indices) -> tuple[int, int, bool]:
 
 
 # ---------------------------------------------------------------- cache under <series>/.state/
-CACHE_VERSION = 1
+CACHE_VERSION = 2     # 2: block hashes per chapter (counts by (index, hash))
 
 
 def file_sig(path) -> tuple[int, int]:
@@ -217,8 +251,9 @@ def load_cache(path, book_sig) -> dict[int, ChapterInfo] | None:
             return None
         out = {}
         for row in data["ch"]:
-            index, href, title, toc, blocks, ls, lm, done, failed = row
-            out[index] = ChapterInfo(index, href, title, toc, blocks, (ls, lm), done, failed)
+            index, href, title, toc, blocks, ls, lm, done, failed = row[:9]
+            shas = tuple(row[9]) if len(row) > 9 and isinstance(row[9], list) else None
+            out[index] = ChapterInfo(index, href, title, toc, blocks, (ls, lm), done, failed, shas)
         return out
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return None
@@ -227,17 +262,9 @@ def load_cache(path, book_sig) -> dict[int, ChapterInfo] | None:
 def save_cache(path, book_sig, infos) -> bool:
     """Write every chapter row (rows not computed yet keep None, so the list of files is cached too); atomic."""
     rows = [[i.index, i.href, i.title, i.is_toc, i.blocks, i.log_sig[0], i.log_sig[1], i.done, i.failed]
-            for i in infos]
+            + ([list(i.shas)] if i.shas is not None else []) for i in infos]
     data = {"v": CACHE_VERSION, "sig": list(book_sig), "ch": rows}
-    p = Path(path)
-    tmp = p.with_name(p.name + ".tmp")
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-        os.replace(tmp, p)
-        return True
-    except OSError:
-        return False
+    return atomic.try_write_text(path, json.dumps(data, ensure_ascii=False, separators=(",", ":")))
 
 
 def log_changed(info: ChapterInfo, sig: tuple) -> bool:
