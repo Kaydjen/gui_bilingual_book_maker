@@ -103,6 +103,27 @@ QtObject {
     })
     readonly property url assetsBase: Qt.resolvedUrl("../assets/")
 
+    // a control on a panel card (#171717) would match the pill fill: it is lifted one step more
+    readonly property color pillOnPanel: "#262626"
+    readonly property color pillOnPanelHover: "#303030"
+    // a card opened over a panel card (#171717): a menu #1a1a1a would sink into it
+    readonly property color menuOnPanel: "#222222"
+    readonly property color hotOnPanel: "#303030"
+    // a control on a lifted card (#262626, the message card)
+    readonly property color pillOnLift: "#303030"
+    readonly property color pillOnLiftHover: "#3a3a3a"
+    // the ON track of a switch on a panel
+    readonly property color switchOn: "#2a2a2a"
+    function onPanel(item) {
+        for (var p = item ? item.parent : null; p; p = p.parent)
+            if (p.panelSurface === true)
+                return true
+        return false
+    }
+    function pillFill(onCard, hover) {
+        return onCard ? (hover ? pillOnPanelHover : pillOnPanel) : (hover ? pillHover : pill)
+    }
+
     // brighten a colour by mixing with white (used for hover of text)
     function mix(a, b, f) {
         return Qt.rgba(a.r + (b.r - a.r) * f, a.g + (b.g - a.g) * f, a.b + (b.b - a.b) * f, 1)

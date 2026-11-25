@@ -34,6 +34,7 @@ Item {
         elide: Text.ElideMiddle
         text: line.file
         color: line.usable ? Theme.text : Theme.faint
+        TruncTip {}
     }
     Inset {
         id: box
@@ -43,7 +44,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         width: line.width * 0.34 - 12
         height: 28
-        edge: boxHover.hovered ? Theme.fieldFocus : Theme.fieldLine
+        edge: boxHover.hovered ? Theme.fieldFocus : Theme.s4
         AppText {
             objectName: "addSeriesText" + line.rowIndex
             x: 10
@@ -72,7 +73,8 @@ Item {
         height: parent.height
         elide: Text.ElideRight
         text: line.usable ? line.label : line.note
-        color: line.usable ? Theme.dim : Theme.dim
+        color: Theme.dim
+        TruncTip {}
     }
     AppText {
         objectName: "addLeave" + line.rowIndex

@@ -301,7 +301,7 @@ class Scenes(unittest.TestCase):
     def test_a_problem_opens_the_row_editor(self):
         for r in self.go("problem1"):
             self.assertTrue(r.item("trEditor")["visible"])
-            self.assertEqual(r.item("problemSourceText")["text"], "Paragraph 1 of chapter 50, with a few words to translate.")
+            self.assertEqual(r.item("problemSourceText")["plain"], "Paragraph 1 of chapter 50, with a few words to translate.")
             self.assertEqual(r.item("problemEdit")["text"], "", "a failed block has no translation yet")
             self.assertEqual(r.item("problemRetry")["text"], "Retry")
             self.assertEqual(r.item("problemKeep")["text"], "Keep original")
@@ -380,7 +380,7 @@ class Scenes(unittest.TestCase):
             self.assertEqual(r.item("sampleSub")["text"], "chapter 2703 · first 50 blocks")
             self.assertEqual(r.item("sampleSource1")["color"], DIM)
             self.assertEqual(r.item("sampleTarget1")["color"], BRIGHT)
-            self.assertEqual(r.item("sampleTarget1")["text"], ts.SAMPLE[1])
+            self.assertEqual(r.item("sampleTarget1")["plain"], ts.SAMPLE[1])
             self.assertEqual(r.item("trSampleValue")["text"], "Sample · 1 unreviewed")
             self.assertEqual(r.ambient, 0)
         self.narrow("sample")
@@ -425,11 +425,35 @@ class Scenes(unittest.TestCase):
             self.assertTrue(r.item("promptCard")["visible"])
             self.assertEqual(r.item("promptPanelTitle")["text"], "Prompt")
             self.assertEqual(r.item("promptNameInput")["text"], "")
-            self.assertTrue(len(r.item("promptText")["text"]) > 100, "the shipped prompt is the starting text")
+            self.assertEqual(r.item("promptText")["text"], "", "a new prompt starts empty")
             self.assertEqual(r.item("promptSave")["kind"], "off", "Save is dim until something changed")
             self.assertFalse(r.item("promptDraft")["visible"])
             self.only_red(r)
         self.narrow("promptpanel")
+
+    def test_the_default_prompt_is_read_and_copied_not_edited(self):
+        for r in self.go("promptdefault"):
+            self.assertEqual(r.item("promptPanelTitle")["text"], "Default prompt")
+            self.assertTrue(len(r.item("promptText")["text"]) > 100, "the shipped prompt is shown")
+            self.assertFalse(r.item("promptNameInput")["visible"], "no name: Default is not edited")
+            self.assertEqual(r.item("promptSave")["text"], "Make a copy")
+            self.assertEqual(r.item("promptSave")["kind"], "main")
+            self.assertEqual(r.item("promptCancel")["text"], "Close")
+            self.only_red(r)
+        for r in self.go("promptcopy"):
+            self.assertEqual(r.item("promptPanelTitle")["text"], "Prompt")
+            self.assertEqual(r.item("promptNameInput")["text"], "Default copy")
+            self.assertTrue(r.item("promptNameInput")["visible"])
+            self.assertTrue(len(r.item("promptText")["text"]) > 100, "the copy starts with the Default text")
+            self.assertEqual(r.item("promptSave")["kind"], "main", "a copy is ready to save")
+            self.only_red(r)
+
+    def test_a_click_below_the_prompt_text_types_at_its_end(self):
+        acts = ts.base(tv("promptEdit", True), SHORT, {"op": "set", "name": "promptText", "prop": "text", "value": "abc"}, SHORT,
+                       click("promptBox"), SHORT)
+        r = self.go("ready", scales=(1.0,), tag="prompt_click", data_=data(), actions=acts)[0]
+        self.assertTrue(r.item("promptText")["activeFocus"], "a click in the empty box puts the cursor into the text")
+        self.assertEqual(r.item("promptText")["cursorPosition"], 3)
 
     def test_prompt_editor_with_a_draft(self):
         for r in self.go("promptdraft"):
@@ -550,12 +574,13 @@ class Scenes(unittest.TestCase):
             self.assertEqual(r.item("menuItem0")["color"] == FAINT, not enabled)
 
     def test_a_deleted_prompt_says_so_and_can_be_brought_back(self):
-        make = [tv("promptEdit", False), SHORT, tv("promptSave", "Literary", "my {language}"), SHORT]
+        make = [tv("promptEdit", True), SHORT, tv("promptSave", "Literary", "my {language}"), SHORT]
         gone = ts.base(*make, click("trPrompt"), SHORT, click("promptDelete1"), SHORT)
         r = self.go("ready", scales=(1.0,), tag="prompt_deleted", data_=data(), actions=gone)[0]
         self.assertTrue(r.item("trUndo")["visible"])
         self.assertEqual(r.item("trUndoBarText0")["text"], "Undo")
         self.assertEqual(r.item("trUndoBarText0")["color"], BRIGHT)
+        self.assertFalse(r.has("toastCard") and r.item("toastCard")["visible"], "the delete is not also a pick of the gone prompt")
         back = ts.base(*make, click("trPrompt"), SHORT, click("promptDelete1"), SHORT, click("trUndoBarText0"), SHORT,
                        click("trPrompt"), SHORT)
         r = self.go("ready", scales=(1.0,), tag="prompt_undone", data_=data(), actions=back)[0]
@@ -564,13 +589,13 @@ class Scenes(unittest.TestCase):
 
     def test_prompt_editor_keeps_the_draft_on_escape_and_drops_it_on_cancel(self):
         d = data()
-        typed = [tv("promptEdit", False), SHORT, {"op": "set", "name": "promptText", "prop": "text", "value": "draft text {language}"}, SHORT]
-        keep = ts.base(*typed, {"op": "key", "key": "Escape"}, SHORT, tv("promptEdit", False), SHORT)
+        typed = [tv("promptEdit", True), SHORT, {"op": "set", "name": "promptText", "prop": "text", "value": "draft text {language}"}, SHORT]
+        keep = ts.base(*typed, {"op": "key", "key": "Escape"}, SHORT, tv("promptEdit", True), SHORT)
         r = self.go("ready", scales=(1.0,), tag="prompt_keep", data_=d, actions=keep)[0]
         self.assertTrue(r.item("promptCard")["visible"])
         self.assertEqual(r.item("promptText")["text"], "draft text {language}", "Esc keeps the draft for the next Edit")
         self.assertTrue(r.item("promptDraft")["visible"])
-        drop = ts.base(*typed, click("promptCancel"), SHORT, tv("promptEdit", False), SHORT)
+        drop = ts.base(*typed, click("promptCancel"), SHORT, tv("promptEdit", True), SHORT)
         r = self.go("ready", scales=(1.0,), tag="prompt_drop", data_=d, actions=drop)[0]
         self.assertNotEqual(r.item("promptText")["text"], "draft text {language}", "Cancel throws the draft away")
         self.assertFalse(r.item("promptDraft")["visible"])

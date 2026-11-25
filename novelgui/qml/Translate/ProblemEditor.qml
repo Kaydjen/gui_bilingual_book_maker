@@ -15,8 +15,17 @@ Item {
 
     implicitHeight: 134
 
-    onKeyChanged: edit.text = info.text || ""
-    Component.onCompleted: edit.text = info.text || ""
+    property bool loading: false
+
+    // the row picked: its own text (what was typed there before, or the translation); a reload of the list that keeps the row
+    // keeps the key and so the text being typed
+    function load() {
+        loading = true
+        edit.text = info.text || ""
+        loading = false
+    }
+    onKeyChanged: load()
+    Component.onCompleted: load()
 
     Rectangle {
         objectName: "problemSourceBox"
@@ -34,19 +43,16 @@ Item {
         Flickable {
             anchors.fill: parent
             anchors.margins: 8
-            contentHeight: sourceText.implicitHeight
+            contentHeight: sourceText.height
             clip: true
             interactive: contentHeight > height
             boundsBehavior: Flickable.StopAtBounds
-            AppText {
+            ReadText {
                 id: sourceText
                 objectName: "problemSourceText"
                 width: parent.width
-                height: implicitHeight
-                verticalAlignment: Text.AlignTop
-                wrapMode: Text.Wrap
-                lineHeight: 1.25
-                text: ed.info.source || ""
+                leading: 1.25
+                plain: ed.info.source || ""
                 color: Theme.text
             }
         }
@@ -61,6 +67,15 @@ Item {
         color: Theme.pane
         border.width: 1
         border.color: edit.activeFocus ? Theme.fieldFocus : "#2a2a2a"
+        MouseArea {
+            // the margin around the text: a click there types at the end
+            anchors.fill: parent
+            cursorShape: Qt.IBeamCursor
+            onPressed: {
+                edit.forceActiveFocus()
+                edit.cursorPosition = edit.length
+            }
+        }
         Flickable {
             id: flick
             anchors.fill: parent
@@ -73,12 +88,14 @@ Item {
                 id: edit
                 objectName: "problemEdit"
                 width: flick.width
+                height: Math.max(implicitHeight, flick.height)
                 wrapMode: TextEdit.Wrap
                 color: Theme.bright
                 selectionColor: Theme.s4
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontSize
                 selectByMouse: true
+                onTextChanged: if (!ed.loading && ed.key >= 0) ed.translate.problemDraft(text)       // kept per row by the view-model
                 onCursorRectangleChanged: {
                     if (cursorRectangle.y < flick.contentY)
                         flick.contentY = cursorRectangle.y
@@ -88,6 +105,17 @@ Item {
                 Keys.onPressed: event => {
                     Tips.dismiss()
                     event.accepted = false
+                }
+                MouseArea {
+                    // the empty space below the text: the cursor goes to the end of the text
+                    y: edit.contentHeight
+                    width: parent.width
+                    height: Math.max(0, parent.height - y)
+                    cursorShape: Qt.IBeamCursor
+                    onPressed: {
+                        edit.forceActiveFocus()
+                        edit.cursorPosition = edit.length
+                    }
                 }
             }
         }

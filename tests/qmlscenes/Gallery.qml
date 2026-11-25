@@ -172,8 +172,10 @@ AppRoot {
         y: 610
         width: 120
         height: 30
-        Pill { id: opener; text: "Opener ▾"; objectName: "opener" }
+        Pill { id: opener; text: "Opener ▾"; objectName: "opener"; onClicked: dd.openUnder(opener) }
     }
+
+    Pill { objectName: "panelOpener"; x: 160; y: 610; text: "Panel"; onClicked: panel.open() }
 
     // ---- overlays (one at a time)
     DropDown {
@@ -212,6 +214,20 @@ AppRoot {
         Field { objectName: "panelField"; y: 70; width: parent.width; value: "Book 2"
             validate: t => t.length > 0 && t.length < 10; invalidTip: "1 to 9 characters"
             onCommitted: t => rec.record("fieldCommitted", t) }
+        Column {
+            y: 110
+            width: parent.width
+            visible: fake.tall === true
+            Repeater {
+                model: fake.tall === true ? 30 : 0
+                AppText { required property int index; text: "Line " + (index + 1); color: Theme.dim }
+            }
+        }
+    }
+    Timer {
+        running: fake.toastAfter === true
+        interval: 1500
+        onTriggered: toast.show("A late message")
     }
     Item { objectName: "liveProbe"; visible: false; property bool live: Visual.live }
     Toast {
@@ -219,6 +235,7 @@ AppRoot {
         objectName: "toast"
     }
     Component.onCompleted: Qt.callLater(function () {
+        Focus.byKey = fake.byKey === true
         if (overlay === "dropdown") dd.openUnder(opener)
         else if (overlay === "menu") menu.openAt(700, 540)
         else if (overlay === "panel") panel.open()

@@ -308,6 +308,7 @@ CHAPTER_STATE = ("How much of the chapter is translated.", [("Full line", "every
 NEXT_STEP = ("The next step for this selection. It only opens the step; nothing starts.", [])
 MOVE_OFF = "Only a book with nothing translated can move: the glossary and the language belong to its series."
 UPDATE_FILE_OFF = "Comes with a later program change."
+TR_SAMPLE_NEXT = "Translate the next 50 paragraphs of this chapter"
 READ_OFF = "Nothing of this chapter is translated yet."
 RENAME_TAKEN = "Another series already has this name."
 UNDO = "Brings it back from the program's trash, with its books, translations and glossary."
@@ -337,6 +338,8 @@ TR_PROMPT_NOTHING = "Nothing changed yet."
 TR_PROMPT_DRAFT = "Unsaved text from the last time. Cancel throws it away."
 TR_FROM = "The language of the book. Reserved: it is read from the file."
 TR_PROMPT = "How the model is asked to translate. Choose another or make a new one."
+TR_PROMPT_VIEW = "Read the Default prompt. It cannot be changed; make a copy to change it."
+TR_PROMPT_COPY = "A new prompt with this text, open for editing."
 TR_PROMPT_EDIT = "Edit the prompt %s. A saved prompt applies from the next chapter, also during a run."
 TR_PROMPT_DELETE = "Delete this prompt. The series that use it go back to Default."
 TR_SAMPLE = ("Translates the first %d blocks of the first selected chapter to try the prompt. The result opens in the "
@@ -353,7 +356,7 @@ TR_PER = {1: "One paragraph per request: the slowest, the most requests.",
           5: "About 1000 characters, 10 paragraphs at most. No loss of quality was measured against 1.",
           10: "About 2000 characters, 20 paragraphs at most. Not yet compared with 1 and 5 for quality."}
 TR_KEYS_HEAD = "Your Google API keys. Click: Settings at the keys."
-TR_LEFT = "All keys together: %s, 500 requests a day each."
+TR_LEFT = "An estimate for this PC. All keys together: %s, 500 requests a day each; requests made from another PC are not counted."
 TR_TAB = {"chapters": "The chapters of the selection.", "problems": "Blocks that failed or that a check flagged.",
           "queue": "Jobs that wait for their turn.", "sample": "The sample of the first chapter."}
 TR_TAB_RED = "%d blocks failed: they are left out of export until fixed."

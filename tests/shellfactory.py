@@ -123,6 +123,8 @@ def make(data):
                "exportVm": parts.export_vm}
     extras = {
         "__close": parts.close,
+        "attr": lambda obj, name: getattr(objects[obj], name),
+        "seriesTitle": lambda folder: json.loads((lib / folder / "series.json").read_text(encoding="utf-8")).get("name"),
         "tray": lambda: {"lines": parts.tray.lines, "actions": parts.tray.actions, "tooltip": parts.tray.tooltip,
                          "alert": parts.tray.alert},
         "notify": lambda: _lines(data_dir / "notify.log"),
@@ -147,6 +149,9 @@ def make(data):
         "filesOf": lambda name: sorted(str(p.relative_to(lib / name)) for p in (lib / name / "books").glob("*")),
         "keys": lambda: keys,
         "terms": lambda fn, *a: getattr(parts.terms_vm, fn)(*a),
+        "touchSeriesRow": lambda i: _touch_series_row(parts.books_vm, i),
+        "touchTermRow": lambda i: _touch_term_row(parts.terms_vm, i),
+        "arrangeTerms": lambda: (parts.terms_vm._arrange_now(), True)[1],
         "floatText": lambda: parts.terms_vm.float_text(),
         "suggest": lambda names: _suggest(parts, names),
         "glossaries": lambda: _glossaries(root / "Incoming"),
@@ -163,6 +168,23 @@ def make(data):
     from tests import exportdrive
     extras.update(exportdrive.Drive(parts, lib, tr_drive).extras())
     return objects, extras
+
+
+def _touch_series_row(books, i: int) -> bool:
+    """The view-model updates one row of the series list (its tail text changes): one `dataChanged` for that row."""
+    rows = [list(r) for r in books.series_model.rows]
+    i = next((k for k, r in enumerate(rows) if r[6]), i)            # the row being renamed, else the one asked for
+    rows[i][3] = rows[i][3] + " "
+    books.series_model.set_rows(rows)
+    return True
+
+
+def _touch_term_row(terms, i: int) -> bool:
+    """The view-model replaces one row of the term table (its About text changes): one `dataChanged` for that row."""
+    row = list(terms.model.row(i))
+    row[5] = row[5] + "."
+    terms.model.replace(i, tuple(row))
+    return True
 
 
 def _suggest(parts, names) -> int:

@@ -39,7 +39,7 @@ FIELDS = {"ren": "tr", "about": "note"}
 
 def _tips() -> dict:
     return {"nolang": termtips.NO_LANGUAGE, "confirmTicked": termtips.CONFIRM_TICKED, "merge": termtips.MERGE,
-            "notATerm": termtips.NOT_A_TERM, "scanning": termtips.SCANNING, "goTranslate": "%s",
+            "notATerm": termtips.NOT_A_TERM, "scanning": termtips.SCANNING, "goTranslate": termtips.GO_TRANSLATE,
             "confirmN": termtips.confirm_tip}
 
 
@@ -225,11 +225,11 @@ class TermsVM(QObject):
         self._skeleton_t.start()
         if rows:
             self._scanning += 1
-            self.session.scan_book(book, on_done=lambda n: self._scan_done(), on_error=lambda e: self._scan_failed(e),
+            self.session.scan_book(book, on_done=lambda n: self._scan_done(), on_error=lambda e: self._scan_failed(e, (path, book)),
                                    on_progress=self._scan_progress)
         if self.mine_names:
             self._scanning += 1
-            self.session.load_names(book, on_done=lambda n: self._scan_done(), on_error=lambda e: self._scan_failed(e))
+            self.session.load_names(book, on_done=lambda n: self._scan_done(), on_error=lambda e: self._scan_failed(e, (path, book)))
         self._scan_done()
 
     def _scan_progress(self, item) -> None:
@@ -247,8 +247,11 @@ class TermsVM(QObject):
         self.viewChanged.emit()
         self.floatChanged.emit()
 
-    def _scan_failed(self, exc) -> None:
-        self.app.message = "The book could not be read for terms: %s." % exc
+    def _scan_failed(self, exc, key=None) -> None:
+        if key is not None and key != tuple(self._ctx[:2]):
+            self.app.log.add("A book that is not open any more could not be read for terms: %s" % exc)
+        else:
+            self.app.fail("The book could not be read for terms.", exc)
         self._scan_done()
 
     def _set_scan_line(self) -> None:
@@ -318,15 +321,28 @@ class TermsVM(QObject):
     def _arranged(self, res) -> None:
         shown, cells, counts, total, confirm = res
         self.arranges += 1
+        keep = self._edit_survives(shown)
         self._shown, self._counts, self._total, self._confirm_keys = shown, counts, total, confirm
         self._sel.set_rows(r.key for r in shown)
-        self.model.set_rows(cells)
+        self.model.set_rows(cells, in_place=keep)
         self._push_selection(reader=False)
         if self._reader_key != self._cursor_key():
             self._open_reader()
         self.viewChanged.emit()
         self.listChanged.emit()
         self.floatChanged.emit()
+
+    def _edit_survives(self, shown) -> bool:
+        """A cell is being edited: the new arrangement keeps the same term in that place, so the field stays open (the cells
+        are updated in place); otherwise the edit ends, its row is another one now."""
+        if not self._edit:
+            return False
+        i = self._edit[0]
+        if len(shown) == len(self._shown) and 0 <= i < len(shown) and shown[i].key == self._shown[i].key:
+            return True
+        self._edit = None
+        self.editChanged.emit()
+        return False
 
     def _push_selection(self, reader: bool = True) -> None:
         cur = self._sel.cursor_index
@@ -620,6 +636,7 @@ class TermsVM(QObject):
         row = self._shown[i] if 0 <= i < len(self._shown) else None
         if row is not None and isinstance(QGuiApplication.instance(), QGuiApplication):
             QGuiApplication.clipboard().setText("\t".join((row.source, row.tr, row.type, row.gender)))
+            self._say([{"text": "Copied", "kind": ""}], [])             # the message line says it (Ctrl+C has no button)
 
     # ------------------------------------------------------------- editing in place (9.12)
     @Property(int, notify=editChanged)
@@ -898,7 +915,7 @@ class TermsVM(QObject):
         self.session.read_glossaries(paths, lambda res: self._glossaries_read(paths, res), on_error=self._import_bad)
 
     def _import_bad(self, exc) -> None:
-        self.app.message = "A glossary could not be read: %s." % exc
+        self.app.fail("A glossary could not be read.", exc)
 
     def _glossaries_read(self, paths, res) -> None:
         self._import = {"open": True, "paths": list(paths), "read": res,
@@ -953,7 +970,7 @@ class TermsVM(QObject):
     def _import_failed(self, exc) -> None:
         self._importing = False
         self._msg = None
-        self.app.message = "The glossaries could not be imported: %s." % exc
+        self.app.fail("The glossaries could not be imported.", exc)
         self.viewChanged.emit()
         self.floatChanged.emit()
 

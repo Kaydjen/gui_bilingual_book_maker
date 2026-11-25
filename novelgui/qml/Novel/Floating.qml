@@ -12,6 +12,7 @@ FocusScope {
     property alias card: cardSurface
     default property alias content: inner.data
     property real contentHeight: inner.childrenRect.height
+    readonly property bool onCard: Theme.onPanel(floating)       // opened over a panel card
     property real cardX: 0
     property real cardY: 0
     signal closed()
@@ -20,6 +21,9 @@ FocusScope {
     visible: false
     z: 500
 
+    function rememberFocus() {
+        keeper.remember()
+    }
     function place(px, py) {
         cardX = Math.max(8, Math.min(px, width - cardWidth - 8))
         var h = cardSurface.height
@@ -28,12 +32,14 @@ FocusScope {
     function openUnder(item) {
         anchorItem = item
         var p = item.mapToItem(floating, 0, item.height + 4)
+        rememberFocus()
         visible = true
         place(p.x, p.y)
         forceActiveFocus()
     }
     function openAt(px, py) {
         anchorItem = null
+        rememberFocus()
         visible = true
         place(px, py)
         forceActiveFocus()
@@ -45,10 +51,16 @@ FocusScope {
         closed()
     }
 
+    onVisibleChanged: if (!visible) keeper.restore()
+    FocusKeeper {
+        id: keeper
+        owner: floating
+    }
+
     MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.AllButtons
-        onPressed: floating.close()
+        onReleased: floating.close()            // not on the press: a hidden catcher would hand the release to the opener under it
     }
     Surface {
         id: cardSurface
@@ -59,7 +71,7 @@ FocusScope {
         height: Math.min(floating.maxCardHeight, floating.contentHeight + 10)
         level: 2
         radius: Theme.rMenu
-        color: Theme.menu
+        color: floating.onCard ? Theme.menuOnPanel : Theme.menu
         opacity: floating.visible ? 1 : 0
         transform: Translate { y: floating.visible ? 0 : -4 }
         Behavior on opacity { NumberAnimation { duration: Theme.durPop } }

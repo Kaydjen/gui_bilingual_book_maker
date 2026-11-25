@@ -193,6 +193,7 @@ AppRoot {
             elide: Text.ElideMiddle
             text: root.app.libraryPath
             color: Theme.dim
+            TruncTip {}
         }
     }
     Connections {

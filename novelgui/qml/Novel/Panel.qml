@@ -13,6 +13,7 @@ FocusScope {
     property string actionKind: "main"
     property bool actionEnabled: true
     property bool sticky: false
+    property bool panelSurface: true        // a menu or a list opened over the panel is a card on a card
     property real panelWidth: 440
     property real margin: 20
     default property alias content: inner.data
@@ -28,6 +29,7 @@ FocusScope {
     z: 600
 
     function open() {
+        keeper.remember()
         visible = true
         forceActiveFocus()
     }
@@ -42,8 +44,16 @@ FocusScope {
         close()
     }
     function accept() {
+        if (!visible)
+            return
         if (actionText !== "" && actionEnabled)
             accepted()
+    }
+
+    onVisibleChanged: if (!visible) keeper.restore()
+    FocusKeeper {
+        id: keeper
+        owner: panel
     }
 
     Rectangle {
@@ -54,16 +64,17 @@ FocusScope {
         MouseArea {
             anchors.fill: parent
             acceptedButtons: Qt.AllButtons
-            onPressed: {
-                card.forceActiveFocus()         // the field loses focus and commits
+            onPressed: card.forceActiveFocus()          // the field loses focus and commits
+            onReleased: {
                 if (!panel.sticky)
-                    panel.close()
+                    panel.close()               // closed on the release: a hidden veil would hand it to what lies under it
             }
         }
     }
     Surface {
         id: card
         objectName: "panelCard"
+        property bool panelSurface: true
         anchors.centerIn: parent
         width: Math.min(panel.panelWidth, panel.width - 2 * panel.margin)
         height: Math.min(panel.height - 2 * panel.margin, 22 + head.height + inner.childrenRect.height + 16 + foot.height + 20)
@@ -95,6 +106,7 @@ FocusScope {
             }
             Flickable {
                 id: body
+                objectName: card.objectName + "Body"
                 y: head.height
                 width: parent.width
                 height: Math.min(inner.childrenRect.height, parent.height - head.height - 16 - foot.height)

@@ -98,6 +98,21 @@ class Scenes(unittest.TestCase):
             self.assertTrue(r.item("contextLine")["text"].startswith("Knights"), "the chosen series in the header (1.3)")
         self.narrow("one", lib(knights(), *others()), [WAIT])
 
+    def test_an_unticked_row_does_not_stay_lifted(self):
+        """A click ticks a row, a second click unticks it: the row then looks like any unticked row (the lifted cursor look
+        belongs to the keyboard)."""
+        click = {"op": "clickAt", "x": 600, "y": 300}
+        pause = {"op": "wait", "ms": 300}
+        away = {"op": "moveTo", "x": 200, "y": 400}
+        base = self.go("untick0", lib(knights()), [WAIT, away, pause], scales=(1.0,))[0]
+        once = self.go("tick", lib(knights()), [WAIT, click, pause, away, pause], scales=(1.0,))[0]
+        r = self.go("untick", lib(knights()), [WAIT, click, pause, click, pause, away, pause], scales=(1.0,))[0]
+        spot = (800, 292)
+        self.assertNotEqual(once.pixel(*spot), base.pixel(*spot), "the ticked row is marked")
+        self.assertEqual(r.pixel(*spot), base.pixel(*spot), "the unticked row looks as before")
+        self.assertTrue(once.item("capsule")["visible"])
+        self.assertFalse(r.item("capsule")["visible"], "nothing is ticked")
+
     def test_one_piece_selected(self):
         for r in self.go("piece", lib(knights(), *others()), [WAIT, sel("2697-2750")]):
             self.assertTrue(r.item("capsule")["visible"])
@@ -380,7 +395,7 @@ class Scenes(unittest.TestCase):
             self.assertEqual(r.item("readerTabText")["text"], "Reader · 2653")
             self.assertEqual(r.item("readerTitle")["text"], "Chapter 2653 - Lyonesse")
             self.assertEqual(r.item("readerPairs")["count"], 4)
-            self.assertTrue(r.item("readerTarget")["text"].startswith("Translated:"))
+            self.assertTrue(r.item("readerTarget")["plain"].startswith("Translated:"))
             self.assertEqual(r.item("readerVersion")["text"], "r1 ▾")
             self.assertEqual(r.item("step_translate")["kind"], "")
             self.one_red(r)
@@ -389,7 +404,7 @@ class Scenes(unittest.TestCase):
     def test_reader_of_an_untranslated_chapter_shows_dashes_and_closes(self):
         acts = [WAIT, {"op": "py", "name": "read", "args": [90]}, {"op": "wait", "ms": 1200}]
         for r in self.go("readerempty", lib(knights(), *others()), acts):
-            self.assertEqual(r.item("readerTarget")["text"], "—")
+            self.assertEqual(r.item("readerTarget")["plain"], "—")
         acts = acts + [{"op": "click", "name": "readerClose"}, {"op": "wait", "ms": 300}]
         for r in self.go("readerclosed", lib(knights(), *others()), acts):
             self.assertFalse(r.item("readerScreen")["visible"])

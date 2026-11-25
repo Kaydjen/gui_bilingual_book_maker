@@ -14,9 +14,10 @@ Item {
     implicitHeight: 20
 
     Inset {
+        objectName: sw.objectName !== "" ? sw.objectName + "Track" : ""
         anchors.fill: parent
         radius: 10
-        color: sw.checked ? Theme.lift : "#0c0c0c"
+        color: sw.checked ? Theme.switchOn : "#0c0c0c"
         edge: "transparent"
     }
     Rectangle {

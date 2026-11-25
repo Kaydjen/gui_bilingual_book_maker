@@ -56,6 +56,7 @@ RowBase {
         elide: Text.ElideRight
         text: row.src
         color: row.selected || row.current ? Theme.bright : Theme.text
+        TruncTip {}
     }
     Item {
         id: renCell
@@ -72,6 +73,7 @@ RowBase {
             elide: Text.ElideRight
             text: row.nolang ? "—" : row.ren
             color: row.nolang ? Theme.faint : Theme.bright
+            TruncTip {}
         }
         Loader {
             active: row.renChoice && !row.editRen && !row.nolang
@@ -80,6 +82,7 @@ RowBase {
             sourceComponent: ChipCell {
                 objectName: "termChips_" + row.rowIndex
                 values: row.ren.split("")
+                raised: row.selected || row.current
                 terms: row.terms
                 rowIndex: row.rowIndex
                 field: "ren"
@@ -94,8 +97,14 @@ RowBase {
             sourceComponent: Inset {
                 objectName: "termSlot_" + row.rowIndex
                 edge: slot.activeFocus ? Theme.fieldFocus : Theme.fieldLine
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.IBeamCursor
+                    onPressed: slot.forceActiveFocus()
+                }
                 TextInput {
                     id: slot
+                    property bool settled: false
                     x: 6
                     width: parent.width - 12
                     height: parent.height
@@ -104,7 +113,19 @@ RowBase {
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontSize
                     clip: true
-                    onAccepted: row.terms.nameRendering(row.rowIndex, text)
+                    function give() {
+                        if (settled)
+                            return
+                        settled = true
+                        row.terms.nameRendering(row.rowIndex, text)
+                    }
+                    onAccepted: give()
+                    onActiveFocusChanged: if (!activeFocus) give()          // a click away or Tab names it, as a field commits
+                    Keys.onEscapePressed: {
+                        settled = true
+                        text = ""
+                        focus = false
+                    }
                 }
                 TipArea { tip: row.terms.tips.slot }
             }
@@ -189,6 +210,7 @@ RowBase {
             sourceComponent: ChipCell {
                 objectName: "genderChips_" + row.rowIndex
                 values: row.gen.split("")
+                raised: row.selected || row.current
                 terms: row.terms
                 rowIndex: row.rowIndex
                 field: "gender"
@@ -265,10 +287,19 @@ RowBase {
             elide: Text.ElideRight
             text: row.about === "" ? "—" : row.about
             color: row.about === "" ? Theme.faint : Theme.dim
+            TruncTip {}
         }
         MouseArea {
+            // a press is the row's own (cursor, list focus, drag), the double click edits
+            id: aboutMouse
             anchors.fill: parent
             enabled: !row.editAbout
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onPressed: event => row.pressRow(event.button, event.modifiers)
+            onPositionChanged: event => {
+                if (pressed)
+                    row.dragRow(aboutMouse, event.x, event.y)
+            }
             onDoubleClicked: row.terms.beginEdit(row.rowIndex, "about")
         }
         Loader {

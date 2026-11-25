@@ -129,7 +129,7 @@ Item {
         visible: screen.ready && screen.exp.summaryCount !== ""
         anchors.horizontalCenter: parent.horizontalCenter
         y: screen.barY - 28
-        width: sumRow.width + 24
+        width: Math.min(sumCount.implicitWidth + sumRanges.implicitWidth + 24, screen.width - 48)
         height: 24
         radius: 6
         color: Theme.pane
@@ -137,14 +137,19 @@ Item {
             id: sumRow
             anchors.centerIn: parent
             AppText {
+                id: sumCount
                 objectName: "exSummaryCount"
                 text: screen.exp.summaryCount
                 color: Theme.text
             }
             AppText {
+                id: sumRanges
                 objectName: "exSummaryRanges"
+                width: Math.min(implicitWidth, sum.width - 24 - sumCount.width)
+                elide: Text.ElideRight
                 text: " " + screen.exp.summaryRanges
                 color: Theme.dim
+                TruncTip {}
             }
         }
         TipArea { tip: screen.exp.tips.summary }

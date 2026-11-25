@@ -100,27 +100,25 @@ Item {
                 required property string target
                 required property string mark
                 width: ListView.view.width
-                height: Math.max(src.implicitHeight, dst.implicitHeight) + 14
-                AppText {
+                height: Math.max(src.height, dst.height) + 14
+                ReadText {
                     id: src
                     objectName: "readerSource"
                     x: 16
                     y: 7
                     width: parent.width / 2 - 24
-                    height: implicitHeight
-                    wrapMode: Text.Wrap
-                    text: pair.source
+                    leading: 1
+                    plain: pair.source
                     color: Theme.dim
                 }
-                AppText {
+                ReadText {
                     id: dst
                     objectName: "readerTarget"
                     x: parent.width / 2 + 8
                     y: 7
                     width: parent.width / 2 - 24 - (pair.mark !== "" ? 56 : 0)
-                    height: implicitHeight
-                    wrapMode: Text.Wrap
-                    text: pair.target !== "" ? pair.target : "—"
+                    leading: 1
+                    plain: pair.target !== "" ? pair.target : "—"
                     color: pair.target !== "" ? Theme.text : Theme.faint
                     TipArea { tip: tab.reader.tips.edit }
                 }

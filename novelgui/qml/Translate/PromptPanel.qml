@@ -14,17 +14,19 @@ Panel {
     property string initText: ""
     property string reason: ""
     property bool dropDraft: false
-    readonly property bool changed: info.draft === true || nameField.value !== initName || bodyText !== initText
+    readonly property bool readonly: info.readonly === true       // Default: read, then `Make a copy`
+    readonly property bool changed: info.draft === true || info.copy === true || nameField.value !== initName || bodyText !== initText
     property string bodyText: ""
 
     cardItem.objectName: "promptCard"
     closeButton.objectName: "promptCancel"
     actionButton.objectName: "promptSave"
-    actionButton.tip: reason !== "" ? reason : (changed ? translate.tips.problemSave : translate.tips.promptNothing)
-    title: "Prompt"
-    closeText: "Cancel"
-    actionText: "Save"
-    actionEnabled: reason === "" && changed
+    actionButton.tip: readonly ? translate.tips.promptCopy
+                      : (reason !== "" ? reason : (changed ? translate.tips.problemSave : translate.tips.promptNothing))
+    title: info.title || "Prompt"
+    closeText: info.cancel || "Cancel"
+    actionText: info.ok || "Save"
+    actionEnabled: readonly || (reason === "" && changed)
     panelWidth: 720
 
     function load() {
@@ -40,7 +42,12 @@ Panel {
         bodyText = body.text
         reason = translate.promptChanged(nameField.value, body.text)
     }
-    onAccepted: translate.promptSave(nameField.value, body.text)
+    onAccepted: {
+        if (readonly)
+            translate.promptCopyDefault()
+        else
+            translate.promptSave(nameField.value, body.text)
+    }
     onCancelled: dropDraft = true
     onCloseRequested: if (mine) translate.promptClosed(nameField.value, body.text, !dropDraft)
 
@@ -48,6 +55,7 @@ Panel {
         width: parent.width
         spacing: 10
         Row {
+            visible: !panel.readonly
             width: parent.width
             spacing: 10
             AppText {
@@ -74,6 +82,15 @@ Panel {
             width: parent.width
             height: panel.width < 900 ? 250 : 340
             edge: body.activeFocus ? Theme.fieldFocus : Theme.fieldLine
+            MouseArea {
+                // the margin around the text: a click there types at the end, as a click on the empty space below does
+                anchors.fill: parent
+                cursorShape: Qt.IBeamCursor
+                onPressed: {
+                    body.forceActiveFocus()
+                    body.cursorPosition = body.length
+                }
+            }
             Flickable {
                 id: flick
                 anchors.fill: parent
@@ -86,12 +103,14 @@ Panel {
                     id: body
                     objectName: "promptText"
                     width: flick.width
+                    height: Math.max(implicitHeight, flick.height)   // the whole box takes the click, below the text = at the end
                     wrapMode: TextEdit.Wrap
-                    color: Theme.bright
                     selectionColor: Theme.s4
                     font.family: "Consolas"
                     font.pixelSize: Theme.fontSize
                     selectByMouse: true
+                    readOnly: panel.readonly
+                    color: panel.readonly ? Theme.text : Theme.bright
                     onTextChanged: panel.edited()
                     onCursorRectangleChanged: {
                         if (cursorRectangle.y < flick.contentY)
@@ -99,7 +118,18 @@ Panel {
                         else if (cursorRectangle.y + cursorRectangle.height > flick.contentY + flick.height)
                             flick.contentY = cursorRectangle.y + cursorRectangle.height - flick.height
                     }
-                    TipArea { tip: panel.translate.tips.promptText }
+                    MouseArea {
+                        // the empty space below the text: the cursor goes to the end of the text
+                        y: body.contentHeight
+                        width: parent.width
+                        height: Math.max(0, parent.height - y)
+                        cursorShape: Qt.IBeamCursor
+                        onPressed: {
+                            body.forceActiveFocus()
+                            body.cursorPosition = body.length
+                        }
+                    }
+                    TipArea { tip: panel.readonly ? "" : panel.translate.tips.promptText }
                 }
             }
         }

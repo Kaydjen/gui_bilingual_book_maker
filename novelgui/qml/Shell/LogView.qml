@@ -9,8 +9,14 @@ Item {
 
     property var log: null
     property bool follow: true
+    property bool copied: false
 
     Component.onCompleted: log.reload()
+    Timer {
+        id: copiedTimer
+        interval: 1500
+        onTriggered: view.copied = false
+    }
 
     Row {
         id: bar
@@ -26,9 +32,14 @@ Item {
         Pill {
             objectName: "logCopy"
             y: 1
-            text: "Copy"
+            width: 76                               // the same width for `Copy` and `Copied`: the pill beside it stays put
+            text: view.copied ? "Copied" : "Copy"
             tip: view.log.tips.copy
-            onClicked: view.log.copy()
+            onClicked: {
+                view.log.copy()
+                view.copied = true
+                copiedTimer.restart()
+            }
         }
         Pill {
             objectName: "logFolder"
@@ -65,12 +76,15 @@ Item {
                 required property string text
                 required property bool problem
                 width: ListView.view.width
-                height: 24
+                height: Math.max(24, shown.implicitHeight + 8)
                 AppText {
+                    id: shown
                     objectName: "logLine" + line.index
+                    y: 4
                     width: parent.width
-                    height: parent.height
-                    elide: Text.ElideRight
+                    height: implicitHeight
+                    verticalAlignment: Text.AlignTop
+                    wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                     text: line.when + " · " + (line.series !== "" ? line.series + " · " : "") + line.text
                     color: line.problem ? Theme.bright : Theme.dim
                     font.family: "Consolas"

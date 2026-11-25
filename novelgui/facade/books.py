@@ -550,3 +550,8 @@ def apply_prompt(series_path, name: str, text: str | None) -> None:
 def current_prompt_text(series_path) -> str:
     return Series.open(series_path).prompt_text()
 
+
+def default_prompt_text(series_path) -> str:
+    """The shipped prompt of the series' target, whatever prompt the series uses now."""
+    return profiles.prompt_text(Series.open(series_path).target_tag)
+

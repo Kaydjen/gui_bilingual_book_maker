@@ -103,43 +103,48 @@ Item {
                 color: Theme.rowLine
             }
         }
-        Column {
+        Flickable {
+            id: body
+            objectName: "readerBody"
             y: head.height + 10
             x: 16
             width: parent.width - 32
-            spacing: 8
-            AppText {
-                objectName: "readerBefore"
-                width: parent.width
-                height: implicitHeight
-                wrapMode: Text.Wrap
-                textFormat: Text.StyledText
-                lineHeight: 1.4
-                text: pane.info.before || ""
-                color: Theme.dim
-                visible: text !== ""
+            height: parent.height - y - 6
+            contentHeight: paragraphs.height
+            clip: true
+            interactive: contentHeight > height
+            boundsBehavior: Flickable.StopAtBounds
+            Column {
+                id: paragraphs
+                width: body.width
+                spacing: 8
+                ReadText {
+                    objectName: "readerBefore"
+                    width: parent.width
+                    leading: 1.4
+                    rich: pane.info.before || ""
+                    color: Theme.dim
+                    visible: rich !== ""
+                }
+                ReadText {
+                    objectName: "readerText"
+                    width: parent.width
+                    leading: 1.4
+                    rich: pane.info.text || ""
+                    color: Theme.text
+                }
+                ReadText {
+                    objectName: "readerAfter"
+                    width: parent.width
+                    leading: 1.4
+                    rich: pane.info.after || ""
+                    color: Theme.dim
+                    visible: rich !== ""
+                }
             }
-            AppText {
-                objectName: "readerText"
-                width: parent.width
-                height: implicitHeight
-                wrapMode: Text.Wrap
-                textFormat: Text.StyledText
-                lineHeight: 1.4
-                text: pane.info.text || ""
-                color: Theme.text
-            }
-            AppText {
-                objectName: "readerAfter"
-                width: parent.width
-                height: implicitHeight
-                wrapMode: Text.Wrap
-                textFormat: Text.StyledText
-                lineHeight: 1.4
-                text: pane.info.after || ""
-                color: Theme.dim
-                visible: text !== ""
-            }
+        }
+        ScrollAssist {
+            flickable: body
         }
     }
 }

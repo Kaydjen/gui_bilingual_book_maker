@@ -35,6 +35,11 @@ Item {
         anchors.fill: parent
         edge: Theme.fieldFocus
     }
+    MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.IBeamCursor
+        onPressed: input.forceActiveFocus()
+    }
     TextInput {
         id: input
         objectName: ed.objectName + "Input"

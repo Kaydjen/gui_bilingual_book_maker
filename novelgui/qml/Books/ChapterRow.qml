@@ -20,7 +20,7 @@ RowBase {
     leftPad: 8
     dimmed: toc
     selected: model.selected === true
-    current: model.current === true
+    current: Focus.byKey && model.current === true      // the cursor is lifted only while the keys move it: an unticked row looks unticked
 
     Item {
         width: row.columns.widthOf("box")
@@ -47,6 +47,7 @@ RowBase {
         elide: Text.ElideRight
         text: row.title
         color: row.toc ? Theme.faint : (row.selected || row.current ? Theme.bright : Theme.text)
+        TruncTip {}
     }
     Item {
         width: row.columns.widthOf("state")

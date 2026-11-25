@@ -161,12 +161,17 @@ class BooksVM(QObject):
         self._lib_line = self._loading_library
         self.busyChanged.emit()
 
-    def _on_failed(self, kind, exc) -> None:
+    def _on_failed(self, kind, exc, key=None) -> None:
+        current = self.library if kind == "library" else (self.session.series_path, self.session.book)
+        what = "library" if kind == "library" else "book"
+        if key is not None and key != current:
+            self.app.log.add("The %s %s could not be read (no longer open) %s" % (what, key, exc), problem=False)
+            return                                  # a late failure of something that is not open any more: logged, not shown
         self._loading_library = False
         self._lib_line = False
         self._loading_chapters = False
         self.chapterChanged_all()
-        self.app.message = "The %s could not be read: %s." % ("library" if kind == "library" else "book", exc)
+        self.app.fail("The %s could not be read." % what, exc)
 
     def chapterChanged_all(self) -> None:
         self.viewChanged.emit()
@@ -779,8 +784,10 @@ class BooksVM(QObject):
 
     def _op_failed(self, exc) -> None:
         self._busy_ops = max(0, self._busy_ops - 1)
-        self.app.message = str(exc)
-        self.app.log.add(str(exc), problem=True)
+        if isinstance(exc, ops.OpError):
+            self.app.fail(str(exc))                 # written for the user (what could not be done, what did not change)
+        else:
+            self.app.fail("The change could not be made. Nothing was changed.", exc)
         self.reload()
 
     # ------------------------------------------------------------- delete / remove with Undo (4.4)

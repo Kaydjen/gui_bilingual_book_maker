@@ -156,6 +156,7 @@ class AppLibraryTest(Base):
         self.assertIsNone(self.settings.get("library"))
         self.assertIn("cannot be used", vm.message)
         self.assertTrue(any("cannot be used" in e.text and e.problem for e in self.winlog.entries()))
+        vm.dismissMessage()                                 # a second message waits until the first is dismissed
         vm.useFolder(str(blocker))                          # the path is a file
         self.assertIn("the path is a file", vm.message)
 
@@ -572,8 +573,10 @@ class SettingsKeysTest(FakeServerCase):
     def test_pasting_nothing_new_changes_nothing(self):
         vm = self.make_settings(KEYS[:1])
         self.assertEqual(vm.addKeys(KEYS[0]), 0)
+        self.assertEqual(vm.saved, "Already there")
         self.assertEqual(vm.addKeys("short"), 0)
-        self.assertEqual(vm.saved, "")
+        self.assertEqual(vm.saved, "No key found")
+        self.assertEqual(vm.keys.rowCount(), 1)
 
     def test_remove_a_key(self):
         vm = self.make_settings(KEYS[:2])

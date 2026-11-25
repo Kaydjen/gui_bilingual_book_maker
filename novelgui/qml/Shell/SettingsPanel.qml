@@ -12,6 +12,7 @@ FocusScope {
     property var app: null
     property var vm: null
     property bool addingKey: false
+    property bool panelSurface: true
     property bool editingPace: false
     readonly property real innerWidth: card.width - 44
 
@@ -34,13 +35,19 @@ FocusScope {
         glowRect.height = t.height + 6
         flash.restart()
     }
+    FocusKeeper {
+        id: keeper
+        owner: panel
+    }
     onVisibleChanged: {
         if (visible) {
+            keeper.remember()
             forceActiveFocus()
             vm.measureAppData()
             vm.refreshStates()
         } else {
             addingKey = false
+            keeper.restore()
         }
     }
     Connections {
@@ -56,10 +63,8 @@ FocusScope {
         MouseArea {
             anchors.fill: parent
             acceptedButtons: Qt.AllButtons
-            onPressed: {
-                card.forceActiveFocus()
-                panel.close()
-            }
+            onPressed: card.forceActiveFocus()          // the field loses focus and commits
+            onReleased: panel.close()                   // on the release, as Panel does
         }
     }
     Surface {
@@ -71,6 +76,7 @@ FocusScope {
         level: 3
         radius: Theme.rPanel
         color: Theme.panel
+        property bool panelSurface: true
         MouseArea { anchors.fill: parent }
 
         Item {
@@ -229,7 +235,7 @@ FocusScope {
                             anchors.fill: parent
                             visible: !panel.editingPace
                             level: 1
-                            color: Theme.pill
+                            color: Theme.pillOnPanel
                             AppText {
                                 objectName: "paceValue"
                                 anchors.centerIn: parent
@@ -363,6 +369,17 @@ FocusScope {
                     NumberAnimation { target: glowRect; property: "opacity"; to: 0; duration: 800 }
                 }
             }
+        }
+        Message {
+            id: keyUndo
+            objectName: "keyUndo"
+            visible: panel.vm.removedKey !== ""
+            z: 4
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: parent.height - height - 14
+            fact: [{ text: "Deleted ", kind: "" }, { text: panel.vm.removedKey, kind: "n" }]
+            verbs: [{ text: "Undo", kind: "main", id: "undo" }]
+            onVerbActivated: panel.vm.undoRemoveKey()
         }
         AppText {
             objectName: "savedLine"

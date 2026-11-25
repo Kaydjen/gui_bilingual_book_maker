@@ -64,6 +64,8 @@ class Scenes(unittest.TestCase):
             self.assertTrue(r.item("settingsCard")["visible"])
             self.assertEqual(r.item("keyList")["count"], 4)
             self.assertEqual(r.item("modelList")["count"], 2)
+            x, y = r.item("paceRow")["x"], r.item("paceRow")["y"]
+            self.assertGreaterEqual(r.pixel(x + 6, y + 17)[0], 0x22, "a control on the panel is lighter than the panel (#171717)")
             words = [r.item("keyWord%d" % i)["text"] for i in range(4)]
             self.assertEqual(words[0], "")                                   # ready is not repeated
             self.assertTrue(words[1].startswith("paused until"))
@@ -152,7 +154,10 @@ class Scenes(unittest.TestCase):
 
     # ------------------------------------------------------------ header
     def test_header_states(self):
-        quiet = self.run_all("ShellScene", {"library": "ready", "screen": "books"}, tag="hdrquiet")
+        # settled = the chapters are loaded: while they load the skeleton runs its one ambient animation (under load that is
+        # still the case at the time of the shot)
+        settled = [{"op": "until", "name": "chapterSkeleton", "prop": "visible", "value": False}, {"op": "wait", "ms": 100}]
+        quiet = self.run_all("ShellScene", {"library": "ready", "screen": "books"}, settled, tag="hdrquiet")
         for r in quiet:
             self.assertEqual([r.item("step_%s" % s)["kind"] for s in ("books", "terms", "translate", "export")], [""] * 4)
             self.assertEqual(r.ambient, 0)

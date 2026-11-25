@@ -303,8 +303,23 @@ class ProcessTest(unittest.TestCase):
         self.assertEqual(report["fatalHeading"], "The app could not start")
         self.assertIn("Planted startup failure", report["fatalReason"])
         self.assertGreater(png.stat().st_size, 500)
+        self.assert_buttons_are_ours(png, report["rects"])
         self.assertIn("Planted startup failure", self.log_text())
         self.assertFalse((self.local / "running.flag").exists())
+
+    def assert_buttons_are_ours(self, png, rects):
+        """The buttons are the window's own pills (dark fill, or none for a plain one), not the light grey of the stock style:
+        a pixel inside every button and the window background are all dark."""
+        from PySide6.QtGui import QImage
+        img = QImage(str(png))
+        self.assertFalse(img.isNull())
+        for name in ("quitButton", "copyButton", "logButton"):
+            x, y, w, h = rects[name]
+            for dx in (4, w / 2):
+                c = img.pixelColor(int(x + dx), int(y + 4))
+                self.assertLess(max(c.red(), c.green(), c.blue()), 60, "%s is not dark: %s" % (name, c.name()))
+        c = img.pixelColor(int(rects["quitButton"][0] + 4), int(rects["quitButton"][1] + 4))
+        self.assertGreater(c.red(), 12, "the main button keeps its pill fill (#171717), not the bare window")
 
     def test_running_flag(self):
         first = self.start()

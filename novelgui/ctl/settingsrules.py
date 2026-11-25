@@ -12,6 +12,8 @@ DEFAULT_MODEL = "gemini-3.1-flash-lite"
 RECOMMENDED = (("gemini-3.1-flash-lite", "500 a day"), ("gemini-3.5-flash", "20 a day"))
 SAVED = "Saved"
 SAVED_RUN = "Saved · applies from the next start"
+ALREADY = "Already there"
+NO_KEY = "No key found"
 
 
 def clean_pace(text):

@@ -50,7 +50,7 @@ class Parts:
         self.settings_vm = SettingsVM(self.app, self.keystore, self.lanes, self.local)
         self.log_vm = LogVM(self.winlog, keys=lambda: list(self.keystore.keys))
         self.crunch = CrunchClient()
-        self.reader_vm = ReaderVM(self.lanes)
+        self.reader_vm = ReaderVM(self.lanes, self.winlog)
         self.add_vm = AddVM(self.app, self.lanes)
         self.books_vm = BooksVM(self.app, self.lanes, self.crunch, self.add_vm)
         self.terms_vm = TermsVM(self.app, self.lanes, self.books_vm, self.crunch, self.local)

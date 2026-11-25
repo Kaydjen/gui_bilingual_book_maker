@@ -105,7 +105,8 @@ class TranslateVM(QObject):
         self._checking = False
         self._check_pct = 0.0
         self._check_token = None
-        self._prompt_trash = None               # (name, text) of the prompt deleted last (Undo)
+        self._prompt_trash = None               # (name, text, was the series prompt, series path) of the prompt deleted last (Undo)
+        self._drafts: dict = {}                 # problem key -> the text typed in the row editor and not saved yet
         self._last_info_key = None
         self._lang_ready = False
         self._start_facts_cached = sl.choose(sl.StartFacts(has_series=False))
@@ -191,7 +192,7 @@ class TranslateVM(QObject):
                 "queueDown": t.TR_QUEUE_DOWN, "queueRemove": t.TR_QUEUE_X, "queueStop": t.TR_QUEUE_STOP,
                 "problemRetry": t.TR_PROBLEM["retry"], "problemKeep": t.TR_PROBLEM["keep"],
                 "problemIgnore": t.TR_PROBLEM["ignore"], "problemSave": t.TR_PROBLEM["save"],
-                "promptText": t.TR_PROMPT_TEXT, "promptNothing": t.TR_PROMPT_NOTHING,
+                "promptText": t.TR_PROMPT_TEXT, "promptNothing": t.TR_PROMPT_NOTHING, "promptCopy": t.TR_PROMPT_COPY,
                 "promptDraft": t.TR_PROMPT_DRAFT, "problemFailed": t.TR_PROBLEM["failed"],
                 "problemBusy": t.TR_PROBLEM["busy"], "dontResume": t.TR_BAR["dont_resume"] % "the return time",
                 "more": t.TR_BAR["more"], "readOff": t.READ_OFF}
@@ -396,10 +397,16 @@ class TranslateVM(QObject):
     def _got_problems(self, key, rows) -> None:
         if self._key() != key:
             return
+        cur = self._row_problem()
+        keep = self._problem_key(cur) if cur is not None else None
         self._problems = list(rows or [])
         self._problems_ready = True
         infos = self.books.session.infos
         self.problem_rows.set_rows([self._problem_row(p, infos) for p in self._problems])
+        alive = {self._problem_key(p): k for k, p in enumerate(self._problems)}
+        self._drafts = {k: v for k, v in self._drafts.items() if k in alive}
+        if keep in alive:
+            self.problem_rows.set_cursor(alive[keep])       # a reload never closes the editor of a row that still exists
         if self._tab == "problems" and not self._problems:
             self._tab = "chapters"
         self._rebuild_rows()
@@ -706,7 +713,8 @@ class TranslateVM(QObject):
                "toEnabled": has and not lock, "toTip": tto, "fromText": ("From %s" % self._series["source"])
                if self._series["source"] else "", "fromTip": tips.TR_FROM,
                "promptName": pname, "promptEnabled": has and not self._job.foreign, "promptTip": tips.TR_PROMPT,
-               "editEnabled": has and not self._job.foreign, "editTip": tips.TR_PROMPT_EDIT % pname,
+               "editEnabled": has and not self._job.foreign, "editTip": tips.TR_PROMPT_VIEW if pname.lower() == RESERVED
+               else tips.TR_PROMPT_EDIT % pname,
                "sampleText": text, "sampleEnabled": has and enabled and not self._job.foreign, "sampleTip": stip,
                "sampling": sampling, "samplePercent": pct, "languageRed": has and not lang}
         if top != self._top:
@@ -1024,9 +1032,13 @@ class TranslateVM(QObject):
     @Slot(int)
     def readRow(self, row: int) -> None:
         """A translated row opens the reader (Reader tab of Books, 7.16)."""
-        if 0 <= row < len(self._rows_pos) and "translated" in self.chapter_rows.row(row)[7].split(","):
+        if not 0 <= row < len(self._rows_pos):
+            return
+        if "translated" in self.chapter_rows.row(row)[7].split(","):
             self.books.readChapter(self._rows_pos[row])
 
+        else:
+            self.app.message = tips.READ_OFF                # the same words as the tip of the menu item
     @Slot(int, int)
     def visibleRows(self, first: int, last: int) -> None:
         """The rows the list shows now (the chapter scan serves them first)."""
@@ -1549,10 +1561,16 @@ class TranslateVM(QObject):
         """1 | 5 | 10 per request, locked while this series translates (applies from the next start)."""
         if n not in tp.PER_REQUEST or self._own_running() or not self._path:
             return
-        path = self._path
+        path, was = self._path, self._series.get("per_request")
+
+        def failed(exc):
+            if self._path == path:
+                self._series = dict(self._series, per_request=was)
+                self._compute_time()
+            self.app.fail("The setting could not be saved.", exc)
         self._series = dict(self._series, per_request=n)
         self._compute_time()
-        self.lanes.submit(lambda ctx: ftr.save_per_request_task(ctx, path, n), on_error=lambda e: None, lane="data")
+        self.lanes.submit(lambda ctx: ftr.save_per_request_task(ctx, path, n), on_error=failed, lane="data")
 
     @Slot()
     def openKeys(self) -> None:
@@ -1581,8 +1599,17 @@ class TranslateVM(QObject):
             self.app.message = "The prompt %s cannot be read." % name
             return
         self._series = dict(self._series, prompt=name)
+        was = self._series["prompt"]
         self._compute_top()
-        self.lanes.submit(lambda ctx: fbooks.apply_prompt(path, name, text), on_error=lambda e: None, lane="data")
+        self.lanes.submit(lambda ctx: fbooks.apply_prompt(path, name, text),
+                          on_error=lambda exc: self._prompt_not_saved(path, was, exc), lane="data")
+
+    def _prompt_not_saved(self, path, was, exc) -> None:
+        """The series could not take the prompt: the shown name goes back to the one still in the series."""
+        if self._path == path:
+            self._series = dict(self._series, prompt=was)
+            self._compute_top()
+        self.app.fail("The prompt could not be saved for this series.", exc)
 
     @Slot(str)
     def deletePrompt(self, name: str) -> None:
@@ -1590,8 +1617,9 @@ class TranslateVM(QObject):
         if text is None or name.lower() == RESERVED:
             return
         self.prompts.delete(name)
-        self._prompt_trash = (name, text)
-        if str(self._series["prompt"]) == name:
+        was_current = str(self._series["prompt"]) == name
+        self._prompt_trash = (name, text, was_current, self._path)
+        if was_current:
             self.choosePrompt("default")
         self.promptDeleted.emit(name)
         self.topChanged.emit()
@@ -1599,12 +1627,15 @@ class TranslateVM(QObject):
     @Slot()
     def undoPromptDelete(self) -> None:
         if self._prompt_trash:
-            name, text = self._prompt_trash
+            name, text, was_current, path = self._prompt_trash
             self._prompt_trash = None
             try:
                 self.prompts.save(name, text)
-            except (ValueError, OSError):
-                pass
+            except (ValueError, OSError) as exc:
+                self.app.fail("The prompt could not be put back.", exc)
+                return
+            if was_current and path == self._path:
+                self.choosePrompt(name)             # the delete had moved the series to Default: it gets its prompt back
             self.topChanged.emit()
 
     _draft_name = ""
@@ -1616,8 +1647,10 @@ class TranslateVM(QObject):
         if not self._path or self._panel:
             return
         name = "" if fresh else str(self._series["prompt"])
-        name = "" if name.lower() == RESERVED else name
         path = self._path
+        if name.lower() == RESERVED:
+            self._show_default(path)
+            return
         text = "" if fresh else fbooks.current_prompt_text(path)
         draft = self.app.win.prompt_draft(path)
         orig = (name, text)
@@ -1625,6 +1658,31 @@ class TranslateVM(QObject):
             name, text = draft
         self._draft_name, self._draft_text, self._prompt_orig = name, text, orig
         self._open_panel("prompt", {"title": "Prompt", "name": name, "text": text, "draft": draft is not None and draft != orig,
+                                    "error": self._prompt_error(name), "ok": "Save", "cancel": "Cancel"})
+
+    def _show_default(self, path) -> None:
+        """Default is read, not edited: the same panel read-only, `Close | Make a copy`."""
+        try:
+            text = fbooks.default_prompt_text(path)
+        except (OSError, ValueError, KeyError) as exc:
+            self.app.fail("The Default prompt cannot be read.", exc)
+            return
+        self._prompt_orig = ("Default", text)
+        self._open_panel("prompt", {"title": "Default prompt", "name": "Default", "text": text, "draft": False,
+                                    "readonly": True, "error": "", "ok": "Make a copy", "cancel": "Close"})
+
+    @Slot()
+    def promptCopyDefault(self) -> None:
+        """`Make a copy` of the Default view: the editor opens on a new prompt with Default's text, ready to save."""
+        if self._panel != "prompt" or not self._panel_data.get("readonly"):
+            return
+        text = self._panel_data["text"]
+        taken = {n.lower() for n in self.prompts.names()}
+        name, k = "Default copy", 2
+        while name.lower() in taken:
+            name, k = "Default copy %d" % k, k + 1
+        self._draft_name, self._draft_text, self._prompt_orig = name, text, ("", "")
+        self._open_panel("prompt", {"title": "Prompt", "name": name, "text": text, "draft": False, "copy": True,
                                     "error": self._prompt_error(name), "ok": "Save", "cancel": "Cancel"})
 
     def _prompt_error(self, name: str) -> str:
@@ -1648,19 +1706,23 @@ class TranslateVM(QObject):
         try:
             clean = self.prompts.save(name.strip(), text)
         except (ValueError, OSError) as exc:
-            self.app.message = "The prompt was not saved: %s" % exc
+            self.app.fail("The prompt was not saved.", exc)
             return
-        path = self._path
+        path, was = self._path, self._series["prompt"]
         self.app.win.clear_prompt_draft(path)
         self._series = dict(self._series, prompt=clean)
         self._finish_prompt()
-        self.lanes.submit(lambda ctx: fbooks.apply_prompt(path, clean, text), on_error=lambda e: None, lane="data")
+        self.lanes.submit(lambda ctx: fbooks.apply_prompt(path, clean, text),
+                          on_error=lambda exc: self._prompt_not_saved(path, was, exc), lane="data")
         self._compute_top()
 
     @Slot(str, str, bool)
     def promptClosed(self, name: str, text: str, keep: bool) -> None:
         """Cancel throws the edit away; Esc and a click outside keep it as a draft (9.2)."""
         if self._panel != "prompt" and not keep:
+            return
+        if self._panel_data.get("readonly"):
+            self._finish_prompt()
             return
         path = self._path
         if path:
@@ -1708,9 +1770,9 @@ class TranslateVM(QObject):
         if s is None:
             self._compute_top()
             return
-        path, book, chapter = run.series, run.book, s["chapter"]
+        path, book, chapter, n = run.series, run.book, s["chapter"], s["n"]
 
-        def got(rows):
+        def got(res):
             cur = self._samples.get(path)
             if cur is None:
                 return
@@ -1738,6 +1800,7 @@ class TranslateVM(QObject):
         infos = self.books.session.infos
         n = bookrows.shown_numbers([infos[s["chapter"]]])[0] if s["chapter"] < len(infos) else s["chapter"] + 1
         title = "Sample" if not s["unreviewed"] else "Sample · %d %s unreviewed" % (
+            cur["total"], cur["more"] = total, total > len(rows)
             s["unreviewed"], "term" if s["unreviewed"] == 1 else "terms")
         run = self.rc.run if self.rc else None
         busy_now = bool(run is not None and run.kind == "sample")
@@ -1757,7 +1820,8 @@ class TranslateVM(QObject):
             return {"open": False}
         p = self._problems[i]
         infos = self.books.session.infos
-        return {"open": True, "index": i, "source": p.source, "text": p.text if p.is_finding else "",
+        return {"open": True, "index": i, "source": p.source,
+                "text": self._drafts.get(self._problem_key(p), p.text if p.is_finding else ""),
                 "reason": p.reason, "detail": p.detail, "finding": p.is_finding,
                 "reasonTip": tips.TR_PROBLEM["failed"] if not p.is_finding else p.detail,
                 "canResolve": self._can_resolve(p)}
@@ -1798,6 +1862,21 @@ class TranslateVM(QObject):
     @Slot()
     def keepProblem(self) -> None:
         self._resolve("keep", "")
+    @staticmethod
+    def _problem_key(p) -> tuple:
+        return (p.chapter, p.block, p.sha, p.kind)
+
+    @Slot(str)
+    def problemDraft(self, text: str) -> None:
+        """What is typed in the row editor now: kept per row (by its stable key) until the row is saved or gone."""
+        p = self._row_problem()
+        if p is None:
+            return
+        if text == (p.text if p.is_finding else ""):
+            self._drafts.pop(self._problem_key(p), None)
+        else:
+            self._drafts[self._problem_key(p)] = text
+
 
     @Slot(str)
     def saveProblem(self, text: str) -> None:
@@ -1810,10 +1889,11 @@ class TranslateVM(QObject):
             return
         path, book = self._path, self._book
         self.lanes.submit(lambda ctx: fchecks.resolve_problems_task(ctx, path, book, [p], action, typed),
-                          on_result=lambda n: self._resolved(), on_error=lambda e: setattr(
-                              self.app, "message", "The block could not be saved: %s." % e), lane="data")
+                          on_result=lambda n: self._resolved(key),
+                          on_error=lambda exc: self._not_resolved("The block could not be saved.", exc), lane="data")
 
-    def _resolved(self) -> None:
+    def _resolved(self, key=None) -> None:
+        self._drafts.pop(key, None)
         self.books.refresh_book()
         self._load_problems()
 
@@ -1824,7 +1904,7 @@ class TranslateVM(QObject):
             return
         path, book = self._path, self._book
         self.lanes.submit(lambda ctx: fchecks.ignore_task(ctx, path, book, [p]), on_result=lambda n: self._load_problems(),
-                          on_error=lambda e: None, lane="data")
+                          on_error=lambda exc: self._not_resolved("The finding could not be ignored.", exc), lane="data")
 
     @Slot()
     def check(self) -> None:
@@ -1836,6 +1916,7 @@ class TranslateVM(QObject):
         path, book, key = self._path, self._book, self._key()
         self._checking, self._check_pct = True, 0.0
         self._compute_bar()
+        key = self._problem_key(p)
         self.checkChanged.emit()
 
         def item(it):
@@ -1844,6 +1925,11 @@ class TranslateVM(QObject):
                 self._compute_bar()
 
         def done(_r):
+    def _not_resolved(self, plain: str, exc) -> None:
+        """A write of the Problems tab failed: the list is read again (what is shown is what is on disk) and one line says so."""
+        self.app.fail(plain, exc)
+        self._load_problems()
+
             self._checking = False
             self._compute_bar()
             self.checkChanged.emit()
@@ -1853,7 +1939,7 @@ class TranslateVM(QObject):
         def failed(exc):
             self._checking = False
             self._compute_bar()
-            self.app.message = "The check could not run: %s." % exc
+            self.app.fail("The check could not run.", exc)
 
         def go():
             if self.crunch is not None:

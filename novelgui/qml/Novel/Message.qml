@@ -9,6 +9,8 @@ Item {
     property var fact: []
     property var verbs: []
     property real progress: -1
+    readonly property real cap: parent ? Math.max(160, parent.width - 48) : 100000      // a long name never runs past the pane
+    readonly property string plain: fact.map(p => p.text).join("")
     signal verbActivated(int index, string id)
 
     implicitWidth: Math.max(line.width, bar.width)
@@ -31,7 +33,7 @@ Item {
             id: line
             objectName: "messageLine"
             anchors.horizontalCenter: parent.horizontalCenter
-            width: text.implicitWidth + 24
+            width: Math.min(text.implicitWidth + 24, msg.cap)
             height: text.implicitHeight + 8
 
             BorderImage {
@@ -51,8 +53,11 @@ Item {
                 id: text
                 objectName: "messageText"
                 anchors.centerIn: parent
+                width: parent.width - 24
+                elide: Text.ElideRight
                 textFormat: Text.StyledText
                 text: msg.html()
+                TruncTip { full: msg.plain }
             }
         }
         Rectangle {

@@ -39,6 +39,11 @@ Item {
             width: Math.min(460, first.width - 48)
             height: 34
             edge: pathInput.activeFocus ? Theme.fieldFocus : Theme.fieldLine
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.IBeamCursor
+                onPressed: pathInput.forceActiveFocus()
+            }
             TextInput {
                 id: pathInput
                 objectName: "firstPathInput"

@@ -18,6 +18,7 @@ Panel {
     actionEnabled: chosen !== ""
     panelWidth: 380
     onAccepted: books.moveBook(chosen)
+    onCancelled: chosen = ""
     onCloseRequested: books.closeMove()
 
     Item {

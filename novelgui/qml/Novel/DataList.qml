@@ -42,6 +42,7 @@ FocusScope {
         if (i >= 0)
             rowDragged(i)
     }
+    onActiveFocusChanged: if (activeFocus) Focus.home = table
     onCursorIndexChanged: if (cursorIndex >= 0) listView.positionViewAtIndex(cursorIndex, ListView.Contain)
 
     Rectangle {
@@ -157,7 +158,7 @@ FocusScope {
             required property var model
             rowIndex: index
             selected: model.selected === true
-            current: model.current === true
+            current: Focus.byKey && model.current === true      // lifted only while the keys move the cursor
             Repeater {
                 model: table.columnSet.columns
                 delegate: Cell {

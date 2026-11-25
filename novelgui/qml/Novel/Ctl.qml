@@ -26,7 +26,7 @@ Item {
         id: face
         anchors.fill: parent
         level: ctl.off ? 0 : 1
-        color: ctl.off ? Theme.pillOff : Theme.pill
+        color: ctl.off ? Theme.pillOff : Theme.pillFill(Theme.onPanel(ctl), false)
         clip: false
     }
     Item {
@@ -37,7 +37,7 @@ Item {
             visible: !ctl.off && mainHover.hovered
             width: main.width
             height: parent.height
-            color: Theme.pillHover
+            color: Theme.pillFill(Theme.onPanel(ctl), true)
             radius: Theme.rControl
         }
         Rectangle {
@@ -45,7 +45,7 @@ Item {
             x: edit.x
             width: edit.width
             height: parent.height
-            color: Theme.pillHover
+            color: Theme.pillFill(Theme.onPanel(ctl), true)
         }
         Rectangle {
             visible: ctl.progress >= 0
@@ -90,7 +90,7 @@ Item {
         x: main.width
         width: 1
         height: parent.height
-        color: Theme.lift2
+        color: Theme.onPanel(ctl) ? Theme.panel : Theme.lift2
     }
     AppText {
         id: edit

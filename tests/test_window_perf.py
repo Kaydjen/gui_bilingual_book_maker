@@ -2,7 +2,11 @@
 
 (i)  a 3000-row ListView over a Python model keeps >= 80 % of its idle frames while the data lane does pure-Python
      work with `ctx.breathe()` (in a child process: it needs its own QGuiApplication, offscreen + software);
-(ii) one run-snapshot apply for a 3000-chapter book (take + diff + one dataChanged per range) <= 3 ms.
+(ii) one run-snapshot apply for a 3000-chapter book (take + diff + one dataChanged per range) <= 3 ms;
+(iii) the real main window reaches its first frame within 1 s (tests/perf_shell.py).
+The other budgets of window_spec 14.21 live next to what they measure: the 3000-row fill <= 60 dataChanged
+(test_books_vm BigBook), the 20,000-row reset <= 30 ms (test_terms_actions PerfTests), the handler of a run snapshot
+<= 3 ms (test_translate_perf and SnapshotApply here), a hidden window < 0.5 % CPU (test_qml_components HiddenCost).
 Skipped without PySide6. Set NOVELGUI_PERF_REPORT=1 to print the numbers.
 """
 
@@ -113,6 +117,23 @@ class SnapshotApply(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_QT, "PySide6 is not installed")
+class ShellFirstFrame(unittest.TestCase):
+    def test_the_main_window_paints_its_first_frame_within_a_second(self):
+        env = dict(os.environ, PYTHONUTF8="1")
+        best = None
+        for _ in range(2):                  # the better of two: a loaded PC adds noise, the code does not
+            out = subprocess.run([sys.executable, str(HERE / "perf_shell.py")], capture_output=True, text=True, env=env,
+                                 timeout=120, cwd=str(HERE.parent))
+            self.assertEqual(out.returncode, 0, out.stdout[-1500:] + out.stderr[-2000:])
+            took = json.loads(out.stdout.strip().splitlines()[-1])["first_frame_s"]
+            best = took if best is None else min(best, took)
+            if best <= 1.0:
+                break
+        report("shell first frame (s)", round(best, 3))
+        self.assertLessEqual(best, 1.0)
+
+
+@unittest.skipUnless(HAVE_QT, "PySide6 is not installed")
 class BooksChapterListScroll(unittest.TestCase):
     """The REAL chapter list of Books (3000 chapters, scanned by the helper) keeps >= 80 % of its idle frames while a lane works."""
 
@@ -145,7 +166,11 @@ class TermsTableScroll(unittest.TestCase):
         self.assertLessEqual(r["reset_ms"], 150, "a 20,000-row reset with the view attached")
         self.assertGreater(r["idle"], 25)
         self.assertGreater(r["work"], 100)
-        # a term row has eight text cells (a chapter row three): its frames are fewer and a lane costs a little more of them
+        # a term row has seven text cells and a box (a chapter row three): about 9 drawn nodes against 4. Measured offscreen:
+        # the software renderer needs ~77 % of every frame and its cost grows with the nodes drawn (about 0.25 ms per node; bindings,
+        # Loaders, hover handlers, the model roles, delegate reuse and a baked box image each changed the frames by under 5 %), so
+        # a row with 2 cells scrolls at ~138 frames per 3 s and a full term row at 37-41 (Books: 99-173). The fewer frames a lane
+        # takes a bigger share of: busy / idle is 0.77-0.86 here, so 0.75 stays.
         self.assertGreaterEqual(r["busy"], 0.75 * r["idle"], r)
 
 

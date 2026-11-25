@@ -171,9 +171,11 @@ class GalleryChecklist(Base):
         self.check("row height 30 (header 30, list top margin 2)", 242, ly, 0)
         self.check("pane #0a0a0a", PANE, r.pixel(x, ly + 15), 3)
         self.check("selected row #1a1a1a", ROW_SEL, r.pixel(x, ly + 45), 3)
-        self.check("current row lifted #1c1c1c", LIFT, r.pixel(x, ly + 75), 3)
+        self.check("the cursor row is not lifted while no key moved it (only selected #1a1a1a)", ROW_SEL, r.pixel(x, ly + 75), 1)
+        rk = qh.scenario("Gallery", data={"byKey": True}, tag="tablekey")
+        self.check("current row lifted #1c1c1c (the keys moved the cursor)", LIFT, rk.pixel(x, ly + 75), 3)
         self.check("current row one pixel up (first lifted pixel row)", ly + 59, next(
-            y for y in range(int(ly) + 50, int(ly) + 70) if r.pixel(x, y)[0] >= 27), 1)
+            y for y in range(int(ly) + 50, int(ly) + 70) if rk.pixel(x, y)[0] >= 27), 1)
         self.check("selected row radius 6", arc_inset(6, 1.5), self.row_edge(r, ly + 31.5, ROW_SEL), 1.5)
         self.check("column splitters: header cells line up with row cells", r.item("headCell_title")["x"], 24 + 6 + 8 + 60, 1)
         self.check("state column is right aligned to the row edge", 24 + 560 - 6 - 8 - 8, r.item("headCell_state")["x"] + r.item("headCell_state")["w"] - 8, 12)
@@ -288,6 +290,27 @@ class Overlays(Base):
         r = qh.scenario("Gallery", data={"overlay": "dropdown"}, tag="ddoff", actions=[{"op": "click", "name": "ddItem6"}, {"op": "wait", "ms": 100}])
         self.assertEqual([e for e in r.events if e[0] == "dropdownPicked"], [])
 
+    def test_a_second_click_on_the_opener_closes_the_dropdown(self):
+        """9.5: the opener is covered by the catcher of the drop-down: its click closes, it does not close and reopen."""
+        r = qh.scenario("Gallery", tag="ddopener", actions=[
+            {"op": "click", "name": "opener"}, {"op": "wait", "ms": 300}, {"op": "dump", "name": "open"},
+            {"op": "click", "name": "opener"}, {"op": "wait", "ms": 400}])
+        self.assertTrue(r.after["open"]["dropdown"]["visible"], "the first click opens it")
+        self.assertFalse(r.item("dropdown")["visible"], "the second click closes it and it stays closed")
+        self.assertEqual([e for e in r.events if e[0] == "dropdownPicked"], [])
+
+    def test_a_click_outside_closes_the_dropdown_and_chooses_nothing(self):
+        """9.7: for the drop-down (the menu is tested above); the click is not passed on to what lies under it."""
+        r = qh.scenario("Gallery", data={"overlay": "dropdown"}, tag="ddout", actions=[
+            {"op": "wait", "ms": 200}, {"op": "clickAt", "x": 700, "y": 600}, {"op": "wait", "ms": 300}])
+        self.assertFalse(r.item("dropdown")["visible"])
+        self.assertEqual([e for e in r.events if e[0] == "dropdownPicked"], [])
+        r = qh.scenario("Gallery", data={"overlay": "dropdown"}, tag="ddoutrow", actions=[
+            {"op": "wait", "ms": 200}, {"op": "clickAt", "x": 400, "y": 300}, {"op": "wait", "ms": 300}])
+        self.assertFalse(r.item("dropdown")["visible"])
+        self.assertEqual([e for e in r.events if e[0] in ("dropdownPicked", "rowPressed")], [],
+                         "a click on the table behind the drop-down closes it and does not reach the table")
+
     def test_panel(self):
         r = qh.scenario("Gallery", data={"overlay": "panel"}, tag="panel")
         c = r.item("panelCard")
@@ -340,11 +363,48 @@ class Overlays(Base):
     def test_toast(self):
         r = qh.scenario("Gallery", data={"overlay": "toast", "bare": True}, tag="toast")
         c = r.item("toastCard")
-        self.check("toast fill #171717", PANEL, r.pixel(c["x"] + 6, c["y"] + c["h"] / 2), 3)
+        self.check("toast fill #262626 (lifted, so it reads over a panel)", (38, 38, 38), r.pixel(c["x"] + 6, c["y"] + c["h"] / 2), 3)
         self.check("toast min width 300", 300, c["w"], 0)
-        self.check("toast radius 12", arc_inset(12), self.edge(r, "toastCard", PANEL), 1.5)
+        self.check("toast radius 12", arc_inset(12), self.edge(r, "toastCard", (38, 38, 38)), 1.5)
         r = qh.scenario("Gallery", data={"overlay": "toast"}, tag="toastok", actions=[{"op": "click", "name": "toastButton"}, {"op": "wait", "ms": 100}])
         self.assertFalse(r.item("toast")["visible"])
+
+
+class IconHover(Base):
+    """1.6: the hover colour of the icon buttons differs from the rest colour and is the theme token (dim -> bright text,
+    lifted -> lifter fill)."""
+    LIFT2 = (38, 38, 38)                # Theme.lift2 #262626
+
+    def glyph(self, r, name):
+        return qh.brightest(r.image(), tuple(int(v) for v in r.rect(name)))
+
+    def test_round_button(self):
+        rest = qh.scenario("Gallery", tag="hover_rest")
+        hot = qh.scenario("Gallery", tag="hover_sat", actions=[{"op": "moveTo", "name": "satLone"}, {"op": "wait", "ms": 300}])
+        self.assertNotEqual(self.glyph(rest, "satLone"), self.glyph(hot, "satLone"))
+        self.check("round button glyph at rest is dim", DIM, self.glyph(rest, "satLone"), 14)
+        self.check("round button glyph on hover is bright (Theme.bright)", BRIGHT, self.glyph(hot, "satLone"), 14)
+        self.check("round button fill at rest", LIFT, self.px(rest, "satLone", 8, 19), 3)
+        self.check("round button fill on hover (Theme.lift2)", self.LIFT2, self.px(hot, "satLone", 8, 19), 3)
+
+    def test_title_button_and_panel_cross(self):
+        shown = {"library": "ready", "custom": True, "forceButtons": True}
+        vm = "tests.shellfactory:make"
+        rest = qh.scenario("ShellScene", shown, vm=vm, tag="hover_tb_rest", actions=[{"op": "wait", "ms": 400}])
+        hot = qh.scenario("ShellScene", shown, vm=vm, tag="hover_tb", actions=[
+            {"op": "wait", "ms": 400}, {"op": "moveTo", "name": "btnMin"}, {"op": "wait", "ms": 400}])
+        self.assertNotEqual(self.glyph(rest, "btnMin"), self.glyph(hot, "btnMin"))
+        self.check("title button glyph at rest is dim", DIM, self.glyph(rest, "btnMin"), 14)
+        self.check("title button glyph on hover is bright", BRIGHT, self.glyph(hot, "btnMin"), 14)
+        x, y, w, h = hot.rect("btnMin")
+        self.check("title button hover fill (Theme.lift2)", self.LIFT2, hot.pixel(x / hot.scale + 3, y / hot.scale + 3), 4)
+        self.assertEqual(qh.count_red(hot.image()), 0, "never red")
+        data = {"library": "ready"}
+        opn = [{"op": "call", "obj": "appVm", "fn": "openSettings"}, {"op": "wait", "ms": 700}]
+        rest = qh.scenario("ShellScene", data, vm=vm, tag="hover_x_rest", actions=opn)
+        hot = qh.scenario("ShellScene", data, vm=vm, tag="hover_x", actions=opn + [{"op": "moveTo", "name": "settingsClose"}, {"op": "wait", "ms": 300}])
+        self.check("panel cross at rest is dim", DIM, self.glyph(rest, "settingsClose"), 14)
+        self.check("panel cross on hover is bright", BRIGHT, self.glyph(hot, "settingsClose"), 20)
 
 
 class Tooltips(Base):

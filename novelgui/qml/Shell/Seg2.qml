@@ -17,10 +17,12 @@ Item {
     implicitWidth: nameText.implicitWidth + 1 + actionText.implicitWidth   // implicitWidth of a Text holds its padding
     implicitHeight: 30
 
+    readonly property bool onCard: Theme.onPanel(seg)
+
     Surface {
         anchors.fill: parent
         level: 1
-        color: Theme.pill
+        color: Theme.pillFill(seg.onCard, false)
     }
     Item {
         anchors.fill: parent
@@ -29,14 +31,14 @@ Item {
             visible: nameHover.hovered
             width: nameText.width
             height: parent.height
-            color: Theme.pillHover
+            color: Theme.pillFill(seg.onCard, true)
         }
         Rectangle {
             visible: !seg.actionOff && actionHover.hovered
             x: actionText.x
             width: actionText.width
             height: parent.height
-            color: Theme.pillHover
+            color: Theme.pillFill(seg.onCard, true)
         }
     }
     AppText {
@@ -55,7 +57,7 @@ Item {
         x: nameText.width
         width: 1
         height: parent.height
-        color: Theme.lift2
+        color: seg.onCard ? Theme.panel : Theme.lift2
     }
     AppText {
         id: actionText

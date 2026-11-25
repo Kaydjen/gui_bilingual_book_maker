@@ -12,7 +12,13 @@ Window {
     title: "Novel"
     color: Theme.bg
     visible: false
+    property bool copied: false
 
+    Timer {
+        id: copiedTimer
+        interval: 1500
+        onTriggered: root.copied = false
+    }
     Column {
         anchors.fill: parent
         anchors.margins: 28
@@ -44,12 +50,18 @@ Window {
 
         Pill {
             objectName: "copyButton"
-            text: "Copy details"
-            onClicked: fatal.copyDetails()
+            text: root.copied ? "Copied" : "Copy details"
+            kind: "flat"
+            onClicked: {
+                fatal.copyDetails()
+                root.copied = true
+                copiedTimer.restart()
+            }
         }
         Pill {
             objectName: "logButton"
             text: "Open log"
+            kind: "flat"
             onClicked: fatal.openLog()
         }
         Pill {

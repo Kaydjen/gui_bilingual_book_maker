@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 
-from PySide6.QtCore import Property, QObject, QTimer, QUrl, Slot
+from PySide6.QtCore import Property, QObject, QPointF, QTimer, QUrl, Slot
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickWindow  # noqa: F401  (makes the engine hand out QQuickWindow objects)
@@ -61,9 +61,14 @@ def show(details: str, log_path) -> int:
 
 def _test_grab(window, path: str) -> None:
     names = {}
+    rects = {}
     for name in ("quitButton", "copyButton", "logButton", "fatalHeading", "fatalReason"):
         item = window.findChild(QObject, name)
         names[name] = None if item is None else str(item.property("text"))
+        if item is not None:
+            pos = item.mapToScene(QPointF(0, 0))
+            rects[name] = [pos.x(), pos.y(), item.property("width"), item.property("height")]
+    names["rects"] = rects
     try:
         window.grabWindow().save(path)
         Path(path).with_suffix(".json").write_text(json.dumps(names), encoding="utf-8")

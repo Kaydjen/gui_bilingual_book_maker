@@ -2,7 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 
 // A message panel (mock toast): a small lifted card with a text and one button, centred in the area it is placed in.
-FocusScope {
+Item {
     id: toast
 
     property string text: ""
@@ -16,7 +16,6 @@ FocusScope {
     function show(t) {
         text = t
         visible = true
-        forceActiveFocus()
     }
     function dismiss() {
         if (!visible)
@@ -25,6 +24,10 @@ FocusScope {
         dismissed()
     }
 
+    MouseArea {
+        anchors.fill: parent                // a click on the veil does not reach the screen below
+        acceptedButtons: Qt.AllButtons
+    }
     Surface {
         id: card
         objectName: "toastCard"
@@ -33,7 +36,9 @@ FocusScope {
         height: msg.height + 16 + Theme.pillHeight + 32
         level: 3
         radius: 12
-        color: Theme.panel
+        color: Theme.lift2
+
+        MouseArea { anchors.fill: parent }
 
         AppText {
             id: msg
@@ -47,6 +52,7 @@ FocusScope {
         }
         Pill {
             objectName: "toastButton"
+            onLift: true
             anchors.right: parent.right
             anchors.rightMargin: 20
             anchors.bottom: parent.bottom
@@ -55,6 +61,4 @@ FocusScope {
             onClicked: toast.dismiss()
         }
     }
-    Keys.onEscapePressed: dismiss()
-    Keys.onReturnPressed: dismiss()
 }

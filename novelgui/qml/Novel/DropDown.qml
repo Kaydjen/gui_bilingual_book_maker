@@ -40,6 +40,8 @@ Floating {
             pick(hot)
     }
     function pick(i) {
+        if (!visible)
+            return
         var e = entries[i]
         if (!selectable(e))
             return
@@ -64,13 +66,18 @@ Floating {
             visible: dd.filtering
             width: parent.width
             height: 28
-            edge: filterField.activeFocus ? Theme.fieldFocus : "#222222"
+            edge: filterField.activeFocus ? Theme.fieldFocus : Theme.s3
             AppText {
                 visible: filterField.text === ""
                 x: 8
                 height: parent.height
                 text: dd.placeholder
                 color: Theme.faint
+            }
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.IBeamCursor
+                onPressed: filterField.forceActiveFocus()
             }
             TextInput {
                 id: filterField
@@ -141,7 +148,7 @@ Floating {
                     visible: !item.group && !item.off && (hover.hovered || dd.hot === item.index)
                     anchors.fill: parent
                     radius: Theme.rRow
-                    color: Theme.lift2
+                    color: dd.onCard ? Theme.hotOnPanel : Theme.lift2
                 }
                 Rectangle {
                     visible: item.cur
