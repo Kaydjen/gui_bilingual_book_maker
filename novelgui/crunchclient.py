@@ -191,6 +191,19 @@ class CrunchClient(QObject):
             self._expected.add(p)
             p.kill()
 
+    def release(self) -> None:
+        """Kill the helper now and wait for it: every zip handle it holds goes with it (a move or a delete of a series needs
+        them closed on Windows). A task still in flight is sent again to a fresh helper."""
+        p = self._proc
+        if p is None:
+            return
+        self._kill()
+        p.waitForFinished(2000)
+        for t in self._pending.values():
+            t.sent = False
+        if self._pending:
+            self._ensure()
+
     def _cancel(self, tid: int) -> None:
         t = self._pending.pop(tid, None)
         if t is None or not t.sent:

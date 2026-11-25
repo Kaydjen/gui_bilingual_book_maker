@@ -85,6 +85,15 @@ class BooksSession:
                 lambda ctx, s=self.series_path, b=book: fbooks.scan_chapters_task(ctx, s, b, want),
                 on_result=on_result, on_error=on_error, on_item=on_item, lane="read", group="chapters")
 
+    def close_scan(self) -> None:
+        """Stop the chapter scan of the open book (cancel kills the helper: its zip handles go with it) before a move."""
+        if self._token is not None:
+            self._token.cancel()
+            self._token = None
+        self.scanning = False
+        if self.crunch is not None:
+            self.crunch.release()
+
     def set_visible(self, first: int, last: int) -> None:
         """The rows the list shows now: the scan serves them first."""
         self.want.set(first, last)

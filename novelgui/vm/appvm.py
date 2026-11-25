@@ -214,9 +214,16 @@ class AppVM(QObject):
     def goDigit(self, n):
         self.go(sr.step_for_digit(n))
 
+    def set_context(self, series: str, book: str) -> None:
+        """The series and book chosen on Books: the dim `series · book` of the header (1.1, 1.3)."""
+        if (series, book) != getattr(self, "_context", ("", "")):
+            self._context = (series, book)
+            self.runChanged.emit()
+
     @Property(str, notify=runChanged)
     def contextLine(self):
-        return sr.context_line(self._run.series, self._run.book) if self._library_state == LIBRARY_READY else ""
+        series, book = getattr(self, "_context", ("", ""))
+        return sr.context_line(series, book) if self._library_state == LIBRARY_READY else ""
 
     @Property(str, notify=runChanged)
     def termsState(self):
@@ -303,6 +310,10 @@ class AppVM(QObject):
     def _open_panel(self, name: str, data=None) -> None:
         self._panel, self._panel_data = name, data or {}
         self.panelChanged.emit()
+
+    def show_panel(self, name: str, data=None) -> None:
+        """A panel owned by another view-model (Add book): the shell only learns that one is open (keys, rescan)."""
+        self._open_panel(name, data)
 
     @Slot()
     def closePanel(self):

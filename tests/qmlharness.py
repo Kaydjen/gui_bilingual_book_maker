@@ -331,6 +331,27 @@ def _child(req: dict) -> int:
     mods = {"ctrl": Qt.ControlModifier, "shift": Qt.ShiftModifier, "": Qt.NoModifier}
     keys = {n: getattr(Qt, "Key_" + n) for n in ("Escape", "Return", "Tab", "Down", "Up", "Space", "Home", "End", "A", "Delete", "F2", "1", "2", "3", "4")}
 
+    dragging: dict = {}
+
+    def drag(op, a):
+        """A file drag over the window, delivered as Qt's own drag events (what the platform plugin hands over after the OS
+        said `drag over` / `drop`): urls come from the extras function `a["from"]`."""
+        from PySide6.QtCore import QMimeData
+        from PySide6.QtGui import QDragEnterEvent, QDragLeaveEvent, QDragMoveEvent, QDropEvent
+        if op == "dragEnter":
+            mime = QMimeData()
+            mime.setUrls([QUrl.fromLocalFile(p) for p in extras[a["from"]]()])
+            dragging["mime"] = mime
+        pos = QPoint(a.get("x", 300), a.get("y", 300))
+        args = (pos, Qt.CopyAction, dragging.get("mime"), Qt.LeftButton, Qt.NoModifier)
+        if op == "dragLeave":
+            QGuiApplication.sendEvent(view, QDragLeaveEvent())
+            return
+        cls = {"dragEnter": QDragEnterEvent, "dragMove": QDragMoveEvent, "drop": QDropEvent}[op]
+        ev = cls(pos if op != "drop" else QPointF(pos), *args[1:]) if op == "drop" else cls(*args)
+        QGuiApplication.sendEvent(view, ev)
+        events.append([op + "Accepted", ev.isAccepted()])
+
     def act(a):
         op = a["op"]
         if op == "wait":
@@ -361,6 +382,8 @@ def _child(req: dict) -> int:
             events.append([a["name"], extras[a["name"]](*a.get("args", []))])
         elif op == "get":
             events.append([a["obj"] + "." + a["prop"], getattr(vmobjs[a["obj"]], a["prop"])()])
+        elif op in ("dragEnter", "dragMove", "dragLeave", "drop"):
+            drag(op, a)
         elif op == "shot":
             shoot(a["name"])
         elif op == "dump":

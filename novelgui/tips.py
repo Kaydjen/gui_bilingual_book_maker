@@ -253,3 +253,14 @@ APP_DATA_ROW = ("The program's own data: databases, backups, terms snapshots, th
 GRAPHICS_ROW = ("Auto uses the graphics card. Software draws on the processor: slower, but safe when the window "
                 "stays empty or flickers. Applies from the next start.")
 LOG_BUTTON = "The log of this window: what it did and every problem, without keys."
+
+# Books v6 (step 5)
+ADD_BOOK_PLUS = "Add book"
+CHAPTERS_HEAD = ("Select all chapters, or none. Type numbers on the list to select a range.", [])
+CHAPTER_STATE = ("How much of the chapter is translated.", [("Full line", "every block is translated")])
+NEXT_STEP = ("The next step for this selection. It only opens the step; nothing starts.", [])
+MOVE_OFF = "Only a book with nothing translated can move: the glossary and the language belong to its series."
+UPDATE_FILE_OFF = "Comes with a later program change."
+READ_OFF = "Nothing of this chapter is translated yet."
+RENAME_TAKEN = "Another series already has this name."
+UNDO = "Brings it back from the program's trash, with its books, translations and glossary."

@@ -41,6 +41,9 @@ Window {
         log: logVm
         frame: frameVm
         shell: shellVm
+        books: booksVm
+        add: addVm
+        reader: readerVm
     }
 
     Loader {
@@ -62,6 +65,30 @@ Window {
                 folderLoader.item.open()    // qmllint disable missing-property
             else
                 folderLoader.active = true
+        }
+    }
+
+    Loader {
+        id: filesLoader
+        active: false
+        sourceComponent: FileDialog {
+            currentFolder: root.startUrl
+            fileMode: FileDialog.OpenFiles
+            nameFilters: ["EPUB books (*.epub)"]
+            onAccepted: booksVm.dropped(selectedFiles)
+        }
+        // qmllint disable missing-property
+        onLoaded: item.open()
+        // qmllint enable missing-property
+    }
+    Connections {
+        target: booksVm
+        function onFilesDialogRequested(start) {
+            root.startUrl = "file:///" + start.split("\\").join("/")
+            if (filesLoader.active)
+                filesLoader.item.open()    // qmllint disable missing-property
+            else
+                filesLoader.active = true
         }
     }
 

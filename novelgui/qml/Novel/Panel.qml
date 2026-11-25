@@ -16,6 +16,9 @@ FocusScope {
     property real panelWidth: 440
     property real margin: 20
     default property alias content: inner.data
+    property alias cardItem: card
+    property alias closeButton: closeBtn
+    property alias actionButton: actionBtn
     signal closeRequested()
     signal accepted()
 
@@ -105,6 +108,7 @@ FocusScope {
                 width: parent.width
                 height: Theme.pillHeight
                 Pill {
+                    id: closeBtn
                     objectName: "panelClose"
                     anchors.left: parent.left
                     text: panel.closeText

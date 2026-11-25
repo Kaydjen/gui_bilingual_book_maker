@@ -12,9 +12,13 @@ from PySide6.QtGui import QGuiApplication, QWindow
 
 from .. import keystore, platform
 from ..ctl.winlog import WindowLog
+from ..crunchclient import CrunchClient
 from ..lanes import Lanes
 from ..settings import Settings
+from ..vm.addvm import AddVM
 from ..vm.appvm import AppVM
+from ..vm.booksvm import BooksVM
+from ..vm.readervm import ReaderVM
 from ..vm.logvm import LogVM
 from ..vm.settingsvm import SettingsVM
 from . import notify, paths, tray as trays
@@ -40,16 +44,23 @@ class Parts:
         self.app = AppVM(self.settings, self.winlog, self.tray, None)
         self.settings_vm = SettingsVM(self.app, self.keystore, self.lanes, self.local)
         self.log_vm = LogVM(self.winlog, keys=lambda: list(self.keystore.keys))
+        self.crunch = CrunchClient()
+        self.reader_vm = ReaderVM(self.lanes)
+        self.add_vm = AddVM(self.app, self.lanes)
+        self.books_vm = BooksVM(self.app, self.lanes, self.crunch, self.add_vm)
+        self.books_vm.readRequested.connect(self.reader_vm.openChapter)
         self.window = None
         self.frame_filter = None
 
     def context(self, shell) -> dict:
         return {"shellVm": shell, "appVm": self.app, "settingsVm": self.settings_vm, "logVm": self.log_vm,
-                "frameVm": self.frame}
+                "frameVm": self.frame, "booksVm": self.books_vm, "addVm": self.add_vm, "readerVm": self.reader_vm}
 
     def close(self) -> None:
         self.app.flush()
+        self.crunch.close()
         self.lanes.close()
+        self.lanes.join(2.0)        # a lane that still posts must not meet a destroyed pump
 
 
 def screens() -> list:

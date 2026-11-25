@@ -41,10 +41,14 @@ def make(data):
     settings = {}
     if state == "ready":
         lib.mkdir()
-        series = lib / "Knights"
-        (series / ".state").mkdir(parents=True)
-        (series / "series.json").write_text("{}", encoding="utf-8")
         settings["library"] = str(lib)
+        if data.get("series") is not None:
+            from tests import libfixture
+            libfixture.build(lib, data["series"])
+        else:
+            from tests import libfixture        # one small book: a series without books would show the red `Add book`
+            libfixture.build(lib, [{"name": "Knights", "books": [{"stem": "Book 1", "chapters": 3, "paras": 1}]}])
+            (lib / "Knights" / ".state").mkdir(exist_ok=True)
     elif state == "missing":
         settings["library"] = str(root / "Gone" / "Novel library")
     n_keys = int(data.get("keys", 0))
@@ -58,6 +62,8 @@ def make(data):
     if data.get("keep_awake"):
         settings["keep_awake"] = True
     win = {}
+    if data.get("select"):
+        win["books_last"] = {"series": data["select"][0], "book": data["select"][1] if len(data["select"]) > 1 else ""}
     if data.get("screen"):
         win["screen"] = data["screen"]
     if data.get("tray_seen"):
@@ -93,9 +99,12 @@ def make(data):
         parts.frame.set_edge_hot(True)
     if data.get("run"):
         parts.app.setRun(data["run"])
+    incoming = _incoming(root / "Incoming", data.get("incoming", []), lib)
+    if data.get("scan_hold"):
+        parts.books_vm.scan_hold_ms = int(data["scan_hold"])
     shell = Shell()
     objects = {"shellVm": shell, "appVm": parts.app, "settingsVm": parts.settings_vm, "logVm": parts.log_vm,
-               "frameVm": parts.frame}
+               "frameVm": parts.frame, "booksVm": parts.books_vm, "addVm": parts.add_vm, "readerVm": parts.reader_vm}
     extras = {
         "__close": parts.close,
         "tray": lambda: {"lines": parts.tray.lines, "actions": parts.tray.actions, "tooltip": parts.tray.tooltip,
@@ -110,9 +119,44 @@ def make(data):
         "regions": lambda: {"h": parts.frame.caption_h, "n": len(parts.frame.clients), "max": parts.frame.max_rect},
         "raise": lambda: shell.handle_raise([]),
         "library": lambda: str(lib),
+        "incoming": lambda: incoming,
+        "openAdd": lambda: parts.books_vm.addFiles(incoming),
+        "do": lambda fn, series, *rest: getattr(parts.books_vm, fn)(str(lib / series), *rest),
+        "doBook": lambda fn, *rest: getattr(parts.books_vm, fn)(*rest),
+        "rename": lambda kind, series, stem="": parts.books_vm.startRename(kind, str(lib / series) if kind == "series" else stem),
+        "read": lambda i: parts.books_vm.readChapter(i),
+        "blocking": lambda n: parts.books_vm.set_blocking(n),
+        "folders": lambda: sorted(p.name for p in lib.iterdir()) if lib.exists() else [],
+        "trash": lambda: sorted(str(p.relative_to(lib)) for p in (lib / ".deleted").rglob("*.epub")),
+        "filesOf": lambda name: sorted(str(p.relative_to(lib / name)) for p in (lib / name / "books").glob("*")),
         "keys": lambda: keys,
     }
     return objects, extras
+
+
+def _incoming(folder: Path, specs, lib: Path) -> list:
+    """Files to add: [{"name": "Night Market.epub", "kind": "ok" | "protected" | "fonts" | "bad" | "copy:<series>/<stem>"}]."""
+    from tests import epubs
+    out = []
+    folder.mkdir(parents=True, exist_ok=True)
+    for spec in specs:
+        path = folder / spec["name"]
+        kind = spec.get("kind", "ok")
+        if kind == "bad":
+            path.write_bytes(b"this is not a zip file")
+        elif kind == "protected":
+            epubs.write_with_encryption(path, [(epubs.AES, "OEBPS/ch0.xhtml")])
+        elif kind == "fonts":
+            epubs.write_with_encryption(path, [(epubs.IDPF_FONT, "OEBPS/f.otf"), (epubs.ADOBE_FONT, "OEBPS/g.ttf")])
+        elif kind.startswith("copy:"):
+            series, stem = kind[5:].split("/")
+            import shutil
+            shutil.copyfile(lib / series / "books" / (stem + ".epub"), path)
+        else:
+            epubs.write_epub(path, ["<h1>Chapter 1 - %s</h1><p>Some words to read.</p>" % path.stem] +
+                             ["<h1>Chapter %d - More</h1><p>Text %d.</p>" % (k, k) for k in range(2, 4)])
+        out.append(str(path))
+    return out
 
 
 def _lines(path: Path) -> list:

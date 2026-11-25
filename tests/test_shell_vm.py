@@ -241,10 +241,12 @@ class AppStepsTest(Base):
         spy = QSignalSpy(vm.runChanged)
         vm.setRun({"running": True, "series": "Knights", "book": "Book 1", "terms_red": True, "bogus": 1})
         self.assertEqual((vm.termsState, vm.translateState), ("red", "wave"))
-        self.assertEqual(vm.contextLine, "Knights · Book 1")
+        self.assertEqual(vm.contextLine, "", "the context line follows Books, not the job (1.2, 1.3)")
         vm.setRun({"running": True, "needs_user": True, "series": "Knights"})
         self.assertEqual((vm.termsState, vm.translateState), ("", "attention"))
         self.assertEqual(spy.count(), 2)
+        vm.set_context("Gamma", "Book 2")
+        self.assertEqual(vm.contextLine, "Gamma · Book 2")
 
     def test_context_line_is_empty_without_a_library(self):
         vm = self.make_app({})
