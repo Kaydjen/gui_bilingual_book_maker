@@ -12,6 +12,7 @@ Item {
     property bool dim: false            // no library yet: the steps are dim and take no click
     property string kind: ""
     property var tip: ""
+    property real progress: -1          // the book scan under the word (Terms): a thin line, nothing moves
     property real pulse: 0
     property bool settled: false
     readonly property real value: kind === "red" ? (settled ? 1 : pulse) : (kind === "attention" ? 0.6 + 0.4 * pulse : 0)
@@ -42,6 +43,20 @@ Item {
         anchors.centerIn: parent
         text: step.text
         color: step.shown
+    }
+    Rectangle {
+        objectName: "stepScan_" + step.text
+        visible: step.progress >= 0
+        x: 12
+        y: parent.height - 3
+        width: parent.width - 24
+        height: 2
+        color: Theme.s3
+        Rectangle {
+            width: parent.width * Math.min(1, step.progress / 100)
+            height: 2
+            color: Theme.dim
+        }
     }
     LetterWave {
         id: wave

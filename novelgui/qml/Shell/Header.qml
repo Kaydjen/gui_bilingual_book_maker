@@ -114,6 +114,7 @@ Item {
                         text: cell.modelData.text
                         active: header.app.screen === cell.modelData.id
                         dim: header.app.stepsDim
+                        progress: cell.modelData.id === "terms" ? header.app.termsScan : -1
                         kind: cell.modelData.id === "terms" ? header.app.termsState
                               : (cell.modelData.id === "translate" ? header.app.translateState : "")
                         tip: cell.modelData.id === "translate" ? header.app.translateTip

@@ -67,6 +67,7 @@ class AppVM(QObject):
         self.rescan = lambda: None                  # 14.7: BooksSession.rescan once step 5 has one
         self.rescan_calls = 0
         self._run = sr.RunInfo()
+        self._terms_scan = -1.0
         self._panel = ""
         self._panel_data: dict = {}
         self._message = ""
@@ -228,6 +229,16 @@ class AppVM(QObject):
     @Property(str, notify=runChanged)
     def termsState(self):
         return sr.header_states(self._run)["terms"]
+
+    @Property(float, notify=runChanged)
+    def termsScan(self):
+        """Progress 0..100 of the book scan of the open series (a thin line under the word Terms), -1 when none runs."""
+        return self._terms_scan
+
+    def set_terms_scan(self, percent: float) -> None:
+        if percent != self._terms_scan:
+            self._terms_scan = float(percent)
+            self.runChanged.emit()
 
     @Property(str, notify=runChanged)
     def translateState(self):

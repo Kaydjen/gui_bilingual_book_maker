@@ -102,9 +102,12 @@ def make(data):
     incoming = _incoming(root / "Incoming", data.get("incoming", []), lib)
     if data.get("scan_hold"):
         parts.books_vm.scan_hold_ms = int(data["scan_hold"])
+    parts.terms_vm.mine_names = bool(data.get("mine", False))
+    parts.terms_vm.auto_scan = bool(data.get("autoscan", False))
     shell = Shell()
     objects = {"shellVm": shell, "appVm": parts.app, "settingsVm": parts.settings_vm, "logVm": parts.log_vm,
-               "frameVm": parts.frame, "booksVm": parts.books_vm, "addVm": parts.add_vm, "readerVm": parts.reader_vm}
+               "frameVm": parts.frame, "booksVm": parts.books_vm, "addVm": parts.add_vm, "readerVm": parts.reader_vm,
+               "termsVm": parts.terms_vm}
     extras = {
         "__close": parts.close,
         "tray": lambda: {"lines": parts.tray.lines, "actions": parts.tray.actions, "tooltip": parts.tray.tooltip,
@@ -125,13 +128,45 @@ def make(data):
         "doBook": lambda fn, *rest: getattr(parts.books_vm, fn)(*rest),
         "rename": lambda kind, series, stem="": parts.books_vm.startRename(kind, str(lib / series) if kind == "series" else stem),
         "read": lambda i: parts.books_vm.readChapter(i),
-        "blocking": lambda n: parts.books_vm.set_blocking(n),
+        "blocking": lambda n: (setattr(parts.terms_vm, "feed_blocking", False), parts.books_vm.set_blocking(n))[1],
         "folders": lambda: sorted(p.name for p in lib.iterdir()) if lib.exists() else [],
         "trash": lambda: sorted(str(p.relative_to(lib)) for p in (lib / ".deleted").rglob("*.epub")),
         "filesOf": lambda name: sorted(str(p.relative_to(lib / name)) for p in (lib / name / "books").glob("*")),
         "keys": lambda: keys,
+        "terms": lambda fn, *a: getattr(parts.terms_vm, fn)(*a),
+        "floatText": lambda: parts.terms_vm.float_text(),
+        "suggest": lambda names: _suggest(parts, names),
+        "glossaries": lambda: _glossaries(root / "Incoming"),
+        "holdScan": lambda percent: parts.terms_vm.hold_scan(percent),
+        "holdLoading": lambda: parts.terms_vm.hold_loading(),
+        "holdImporting": lambda n, total, progress: parts.terms_vm.hold_importing(n, total, progress),
+        "importGlossaries": lambda: parts.terms_vm.importPicked(_glossaries(root / "Incoming")),
+        "exportTo": lambda: parts.terms_vm.exportPicked(str(root / "Incoming" / "terms-Knights.json")),
+        "termsTrash": lambda: [p.name for p in (data_dir / "local" / "terms_history").rglob("*.json.gz")],
     }
     return objects, extras
+
+
+def _suggest(parts, names) -> int:
+    """Mined names without a rendering as suggestion rows: [[text, count, first chapter position]]."""
+    from novelgui.ctl.termrows import Suggestion
+    vm = parts.terms_vm
+    vm.session.suggestions = [Suggestion(t, n, f) for t, n, f in names]
+    vm.session.changed.notify("reset", ())
+    return len(names)
+
+
+def _glossaries(folder: Path) -> list:
+    """Two glossary files: a (own, checked) and b (disagrees on one name)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    a = {"Arthur": "Артур", "Camelot": "Камелот", "Dagonet": "Дагонет", "Bors": "Борс", "Percival": "Парсифаль",
+         "Kay": "Кэй", "Bedivere": "Бедивер"}
+    b = {"Dagonet": "Дагонэ", "Ector": "Эктор", "Pellinore": "Пеллинор"}
+    out = []
+    for name, data in (("glossary_a.json", a), ("glossary_b.json", b)):
+        (folder / name).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        out.append(str(folder / name))
+    return out
 
 
 def _incoming(folder: Path, specs, lib: Path) -> list:

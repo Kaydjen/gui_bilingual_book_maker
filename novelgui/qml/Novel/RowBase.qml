@@ -51,7 +51,7 @@ Item {
         }
         Rectangle {
             // keyboard cursor: the ring sits inside the cursor row (selection = background, focus = ring)
-            visible: base.current && Focus.byKey && base.ListView.view && base.ListView.view.activeFocus
+            visible: base.current && Focus.byKey && !!base.owner && base.owner.activeFocus
             anchors.fill: parent
             radius: Theme.rRow
             color: "transparent"

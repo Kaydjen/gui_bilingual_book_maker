@@ -4,7 +4,11 @@ spec of a series: {"name", "folder" (default: the name), "target" ("ru:Russian")
 is written damaged), "labels": {stem: label}}; spec of a book: {"stem", "chapters": n, "start": first title number (default 1),
 "titles": "numbered" | "named" (no numbers in the titles) | "mixed", "translated": k (the first k chapters fully translated),
 "partly": index of a chapter with the first half of its blocks translated, "paras": paragraphs per chapter (default 3),
-"missing": True (the series.json lists nothing, the file is simply absent: not built)}.
+"missing": True (the series.json lists nothing, the file is simply absent: not built), "mentions": {title number: [names]} (the
+paragraphs of that chapter name them one by one; the Terms scan and the reader find them)}.
+A series spec may carry "terms": [term] for terms.json: {"src", "tr", "type", "gender" (stored: male | female | neuter |
+unknown), "status" (new | confirmed), "note", "seen": [chapter positions], "count", "ask": ["tr" | "gender", [[value, file], ...]]}
+and "dismissed": [names]; "chosen": False = the language is not chosen yet (3.1).
 """
 
 from __future__ import annotations
@@ -34,8 +38,10 @@ def chapter_title(book: dict, k: int) -> str:
 def write_book(path: Path, book: dict) -> None:
     pages, titles = [], []
     for k in range(int(book.get("chapters", 10))):
-        paras = "".join("<p>Paragraph %d of chapter %d, with a few words to translate.</p>" % (j + 1, k + 1)
-                        for j in range(int(book.get("paras", 3))))
+        names = (book.get("mentions") or {}).get(str(book.get("start", 1) + k)) or []
+        paras = "".join(("<p>Paragraph %d of chapter %d, with a few words to translate%s.</p>" % (
+            j + 1, k + 1, (", and %s was there" % names[j]) if j < len(names) else "")
+            ) for j in range(int(book.get("paras", 3))))
         titles.append(chapter_title(book, k))
         pages.append("<h1>%s</h1>%s" % (titles[-1], paras))
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -69,6 +75,21 @@ def write_logs(series_path: Path, book: dict) -> None:
         bk.close()
 
 
+def write_terms(series_path: Path, terms, tag: str, dismissed=()) -> None:
+    """terms.json of a series from plain specs (see the module doc)."""
+    from novelcore.terms import TermBase, candidate
+    base = TermBase(series_path / "terms.json", tag)
+    for t in terms:
+        e = base.add(t["src"], status=t.get("status", "new"), tr=t.get("tr", ""), type=t.get("type", "term"),
+                     gender=t.get("gender", "unknown"), note=t.get("note", ""), seen=t.get("seen"), count=t.get("count", 0))
+        if t.get("ask"):
+            field, values = t["ask"]
+            base.ask(e, field, [candidate(v, w) for v, w in values])
+    for name in dismissed:
+        base.dismiss(name)
+    base.save()
+
+
 def build(library: Path, specs) -> list:
     """Create the series of `specs` in `library`; returns the series folders."""
     from novelgui.facade import books as fb
@@ -83,6 +104,8 @@ def build(library: Path, specs) -> list:
         extra = {}
         if spec.get("labels"):
             extra["volume_labels"] = dict(spec["labels"])
+        if spec.get("chosen") is False:
+            extra["target_chosen"] = False
         path = Path(fb.create_series_record(library, spec["name"], spec.get("target", "ru:Russian"), **extra))
         if path != folder and not folder.exists():
             path.rename(folder)
@@ -90,5 +113,7 @@ def build(library: Path, specs) -> list:
         for book in spec.get("books", []):
             write_book(path / "books" / (book["stem"] + ".epub"), book)
             write_logs(path, book)
+        if spec.get("terms") is not None:
+            write_terms(path, spec["terms"], str(spec.get("target", "ru:Russian")).split(":")[0], spec.get("dismissed", ()))
         out.append(path)
     return out
